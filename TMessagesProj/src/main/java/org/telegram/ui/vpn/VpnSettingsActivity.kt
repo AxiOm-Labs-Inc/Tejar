@@ -31,11 +31,14 @@ class VpnSettingsActivity : BaseFragment() {
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     private var subscriptionsContainer: LinearLayout? = null
-    /** Set while a measurement is expected to be followed by switching to the fastest server. */
-    private var pendingAutoSelect = false
-    /** Server ids that must be measured (or time out) before auto-select runs. */
-    private var autoSelectTargetIds: Set<String>? = null
-    private var autoSelectTimeoutJob: Job? = null
+    /** Mirrors the Auto-select switch; the repository holds the stored value. */
+    private var autoSelectEnabled = true
+    /**
+     * True only while this screen is on top. Auto-select keeps working in the background
+     * (measurements arrive, the tunnel moves to the fastest server) but its feedback belongs
+     * to this screen — a toast fired from here would otherwise land on top of a chat.
+     */
+    private var screenVisible = false
     private var pendingMeasureAfterConnect = false
     // configId -> latency in ms as measured by the core itself (-1 = no answer).
     // Seeded from the manager, which restores the last run from disk, so the numbers are
@@ -64,6 +67,7 @@ class VpnSettingsActivity : BaseFragment() {
     private val KEY_AUTO_RECONNECT = "auto_reconnect"
 
     private lateinit var energySavingSwitch: Switch
+    private lateinit var autoSelectSwitch: Switch
 
     // Colors
     private val COLOR_GREEN = 0xFF4CAF50.toInt()
@@ -83,15 +87,16 @@ class VpnSettingsActivity : BaseFragment() {
         subscriptionRepository = VpnSubscriptionRepository(context)
 
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val savedAutoReconnect = prefs.getBoolean(KEY_AUTO_RECONNECT, false)
+        val savedAutoReconnect = prefs.getBoolean(KEY_AUTO_RECONNECT, true)
         manager.autoReconnect = savedAutoReconnect
+        autoSelectEnabled = repository.isAutoSelect()
 
         latency = manager.latency.value
         scope.launch {
             manager.latency.collect { updated ->
                 latency = updated
                 rebuildConfigsList()
-                selectFastestIfRequested(context)
+                applyAutoSelect(context)
             }
         }
         // Re-measure when the tunnel is up; skip while paused or connecting.
@@ -309,6 +314,61 @@ class VpnSettingsActivity : BaseFragment() {
         energySavingRow.addView(energySavingSwitch)
         root.addView(energySavingRow)
 
+        // ════════════════════ AUTO-SELECT ROW ════════════════════
+        val autoSelectRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = makeRoundRect(dp(16), if (autoSelectEnabled) COLOR_GREEN_BG else Theme.getColor(Theme.key_windowBackgroundGray))
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            layoutParams = marginParams(bottom = dp(12))
+        }
+
+        val autoSelectDot = View(context).apply {
+            val size = dp(8)
+            layoutParams = LinearLayout.LayoutParams(size, size).apply { marginEnd = dp(14) }
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(if (autoSelectEnabled) COLOR_GREEN else COLOR_GRAY)
+            }
+        }
+        autoSelectRow.addView(autoSelectDot)
+
+        val asTextBlock = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val asTitle = TextView(context).apply {
+            text = "Auto-select"
+            setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText))
+            textSize = 15f
+        }
+        asTextBlock.addView(asTitle)
+        val asSub = TextView(context).apply {
+            text = "Connect fast, then move to the fastest server"
+            setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText))
+            textSize = 12f
+        }
+        asTextBlock.addView(asSub)
+        autoSelectRow.addView(asTextBlock)
+
+        autoSelectSwitch = Switch(context).apply {
+            isChecked = autoSelectEnabled
+            setOnCheckedChangeListener { _, isChecked ->
+                autoSelectEnabled = isChecked
+                repository.setAutoSelect(isChecked)
+                // Turning it on starts from a clean slate: no earlier manual choice keeps
+                // holding the tunnel in place.
+                if (isChecked) repository.setPinnedId(null)
+                val dotColor = if (isChecked) COLOR_GREEN else COLOR_GRAY
+                val bgColor = if (isChecked) COLOR_GREEN_BG else Theme.getColor(Theme.key_windowBackgroundGray)
+                (autoSelectDot.background as? GradientDrawable)?.setColor(dotColor)
+                autoSelectRow.background = makeRoundRect(dp(16), bgColor)
+                if (isChecked) applyAutoSelect(context)
+            }
+        }
+        autoSelectRow.addView(autoSelectSwitch)
+        root.addView(autoSelectRow)
+
         // ════════════════════ SECTION: SUBSCRIPTIONS ════════════════════
         root.addView(sectionLabel(context, "Subscriptions"))
 
@@ -426,6 +486,8 @@ class VpnSettingsActivity : BaseFragment() {
         if (text.isBlank()) return
         manager.parseLink(text)
             .onSuccess { config ->
+                // Same as picking a saved server: an explicit choice is held by auto-select.
+                pinManualChoice(config.id)
                 repository.save(config)
                 manager.invalidateCachedConfig()
                 repository.setActive(config.id)
@@ -520,6 +582,23 @@ class VpnSettingsActivity : BaseFragment() {
                 showError(state.message)
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        screenVisible = true
+    }
+
+    override fun onPause() {
+        super.onPause()
+        screenVisible = false
+    }
+
+    /** Screen feedback: shown only while the VPN screen is actually in front of the user. */
+    private fun toast(text: String, length: Int = Toast.LENGTH_SHORT) {
+        if (!screenVisible) return
+        val activity = parentActivity ?: return
+        Toast.makeText(activity, text, length).show()
     }
 
     private fun showError(msg: String) {
@@ -715,6 +794,9 @@ class VpnSettingsActivity : BaseFragment() {
                     setTextColor(COLOR_ACCENT)
                     setPadding(dp(12), dp(6), dp(12), dp(6))
                     setOnClickListener {
+                        // Picking a location by hand settles the question: auto-select keeps
+                        // this server instead of chasing the fastest, until it stops answering.
+                        pinManualChoice(config.id)
                         repository.setActive(config.id)
                         repository.setVpnRunning(true)
                         manager.selectServer(config)
@@ -861,7 +943,7 @@ class VpnSettingsActivity : BaseFragment() {
             try {
                 val fetched = SubscriptionFetcher.fetch(sub.url)
                 if (fetched.isEmpty()) {
-                    Toast.makeText(context, "No servers found in subscription", Toast.LENGTH_SHORT).show()
+                    toast("No servers found in subscription")
                     return@launch
                 }
                 // Remove old configs from this subscription
@@ -882,125 +964,95 @@ class VpnSettingsActivity : BaseFragment() {
                 rebuildConfigsList()
                 rebuildSubscriptionsList(context)
 
-                Toast.makeText(context, "Loaded ${fetched.size} servers", Toast.LENGTH_SHORT).show()
+                toast("Loaded ${fetched.size} servers")
 
                 val fetchedIds = fetched.map { it.id }.toSet()
                 beginAutoSelect(context, fetchedIds)
             } catch (e: Exception) {
-                Toast.makeText(context, "Failed to fetch: ${e.message}", Toast.LENGTH_LONG).show()
+                toast("Failed to fetch: ${e.message}", Toast.LENGTH_LONG)
             }
         }
     }
 
     /**
-     * Asks the core to measure servers over their real protocol. When [autoSelectFastest] is
-     * true, waits until every id in [targetIds] has a result (or [AUTO_SELECT_TIMEOUT_MS])
-     * before picking the fastest measured server.
+     * Asks the core to measure every server over its real protocol; results arrive in [latency].
+     *
+     * Measuring is independent of the Auto-select switch — the numbers are shown either way,
+     * they just stop steering the connection when the switch is off.
      */
-    private fun measureLatency(
-        context: Context,
-        autoSelectFastest: Boolean = false,
-        targetIds: Set<String>? = null
-    ) {
+    private fun measureLatency(context: Context) {
         if (!manager.isRunning()) {
-            if (autoSelectFastest) {
-                Toast.makeText(context, "Connect first — servers are measured through the tunnel",
-                    Toast.LENGTH_SHORT).show()
-                cancelAutoSelect()
-            }
+            toast("Connect first — servers are measured through the tunnel")
             return
         }
-        if (autoSelectFastest) {
-            pendingAutoSelect = true
-            autoSelectTargetIds = targetIds ?: configs.map { it.id }.toSet()
-            scheduleAutoSelectTimeout(context)
-        }
-        Toast.makeText(context, "Measuring servers…", Toast.LENGTH_SHORT).show()
+        toast("Measuring servers…")
         manager.measureLatencyAsync()
     }
 
-    /** After a subscription refresh: connect if needed, then measure and auto-select. */
+    /**
+     * After a subscription refresh: get a tunnel up, then measure.
+     *
+     * Connecting deliberately does not wait for measurements — the first server that comes up
+     * carries traffic straight away, and [applyAutoSelect] moves to the fastest one once real
+     * numbers arrive. Waiting for the whole list first is what used to leave the user sitting
+     * on a spinner for twenty seconds.
+     */
     private fun beginAutoSelect(context: Context, fetchedIds: Set<String>) {
-        pendingAutoSelect = true
-        autoSelectTargetIds = fetchedIds
-        scheduleAutoSelectTimeout(context)
-
         if (manager.isRunning()) {
-            Toast.makeText(context, "Measuring servers…", Toast.LENGTH_SHORT).show()
+            toast("Measuring servers…")
             manager.measureLatencyAsync()
             return
         }
+        if (!autoSelectEnabled) return
 
         val starter = repository.getActive()?.takeIf { it.id in fetchedIds }
             ?: configs.firstOrNull { it.id in fetchedIds }
-        if (starter == null) {
-            cancelAutoSelect()
-            return
-        }
+            ?: return
         repository.setActive(starter.id)
         repository.setVpnRunning(true)
         pendingMeasureAfterConnect = true
-        Toast.makeText(context, "Connecting, then measuring servers…", Toast.LENGTH_SHORT).show()
+        toast("Connecting, then measuring servers…")
         manager.selectServer(starter)
     }
 
-    private fun scheduleAutoSelectTimeout(context: Context) {
-        autoSelectTimeoutJob?.cancel()
-        autoSelectTimeoutJob = scope.launch {
-            delay(AUTO_SELECT_TIMEOUT_MS)
-            if (pendingAutoSelect) {
-                selectFastestIfRequested(context, force = true)
-            }
-        }
+    /**
+     * Remembers a server the user picked themselves.
+     *
+     * Auto-select holds this one instead of chasing the fastest, until it stops answering.
+     * With the switch off there is nothing to hold back, so no pin is recorded.
+     */
+    private fun pinManualChoice(id: String) {
+        if (autoSelectEnabled) repository.setPinnedId(id)
     }
 
-    private fun cancelAutoSelect() {
-        pendingAutoSelect = false
-        autoSelectTargetIds = null
-        pendingMeasureAfterConnect = false
-        autoSelectTimeoutJob?.cancel()
-        autoSelectTimeoutJob = null
-    }
+    /**
+     * Auto-select, applied to every batch of measurements.
+     *
+     * A pinned server (one the user chose by hand) keeps the tunnel as long as it answers.
+     * When it stops answering — or when there is no pin — the fastest server that actually
+     * produced a measurement takes over. Servers with no result are never candidates: the
+     * core reports 0 for "no result", and treating that as a duration would hand the tunnel
+     * to the one server that could not be reached at all.
+     */
+    private fun applyAutoSelect(context: Context) {
+        if (!autoSelectEnabled || !manager.isRunning()) return
 
-    /** Switches to the fastest server that answered, once every target has a result or timed out. */
-    private fun selectFastestIfRequested(context: Context, force: Boolean = false) {
-        if (!pendingAutoSelect) return
-
-        val targets = autoSelectTargetIds ?: configs.map { it.id }.toSet()
-        if (targets.isEmpty()) {
-            cancelAutoSelect()
-            return
+        val pinnedId = repository.getPinnedId()
+        if (pinnedId != null) {
+            val stillListed = configs.any { it.id == pinnedId }
+            if (stillListed && !SingBoxLatency.isFailed(latency[pinnedId])) return
+            repository.setPinnedId(null)
         }
 
-        val waiting = targets.count { id ->
-            val delay = latency[id]
-            !SingBoxLatency.isMeasured(delay) && !SingBoxLatency.isFailed(delay)
-        }
-        if (!force && waiting > 0) return
+        val fastest = configs
+            .filter { SingBoxLatency.isMeasured(latency[it.id]) }
+            .minByOrNull { latency[it.id] ?: Int.MAX_VALUE } ?: return
+        if (manager.getCurrentConfig()?.id == fastest.id) return
 
-        val candidates = configs.filter {
-            it.id in targets && SingBoxLatency.isMeasured(latency[it.id])
-        }
-        if (candidates.isEmpty()) {
-            if (force) {
-                Toast.makeText(context, "No servers responded", Toast.LENGTH_SHORT).show()
-                cancelAutoSelect()
-            }
-            return
-        }
-
-        val fastest = candidates.minByOrNull { latency[it.id] ?: Int.MAX_VALUE } ?: return
-        cancelAutoSelect()
         repository.setActive(fastest.id)
         repository.setVpnRunning(true)
         manager.selectServer(fastest)
-        Toast.makeText(context,
-            "Connected to ${fastest.displayName} (${latency[fastest.id]}ms)",
-            Toast.LENGTH_SHORT).show()
-    }
-
-    companion object {
-        private const val AUTO_SELECT_TIMEOUT_MS = 20_000L
+        toast("Switched to ${fastest.displayName} (${latency[fastest.id]}ms)")
     }
 
     private fun rebuildSubscriptionsList(context: Context) {
@@ -1078,7 +1130,7 @@ class VpnSettingsActivity : BaseFragment() {
                         repository.getAll().firstOrNull { it.id == id }
                     }
                     if (subConfigs.isEmpty()) {
-                        Toast.makeText(context, "Update subscription first", Toast.LENGTH_SHORT).show()
+                        toast("Update subscription first")
                     } else {
                         measureLatency(context)
                     }
@@ -1108,7 +1160,6 @@ class VpnSettingsActivity : BaseFragment() {
     }
 
     override fun onFragmentDestroy() {
-        cancelAutoSelect()
         super.onFragmentDestroy()
         scope.cancel()
     }

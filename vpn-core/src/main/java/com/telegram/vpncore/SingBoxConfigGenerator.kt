@@ -33,6 +33,12 @@ object SingBoxConfigGenerator {
         socksPass: String
     ): String {
         require(servers.isNotEmpty()) { "No servers to build a config from" }
+        // A server that dials through a chain whose links we don't have (an entry saved before
+        // chains were parsed) makes the core reject the ENTIRE config — every other server goes
+        // down with it. Leave those out; a subscription refresh restores them complete.
+        val usable = servers.filter { it.rawDependencies.isNotBlank() || !dialsThroughChain(it) }
+        require(usable.isNotEmpty()) { "No servers with a reproducible outbound" }
+        val defaultTag = if (usable.any { it.id == selectedId }) selectedId else usable.first().id
         val root = JSONObject()
 
         // ── log ──────────────────────────────────────────────────
@@ -64,13 +70,20 @@ object SingBoxConfigGenerator {
             put(JSONObject().apply {
                 put("type", "selector")
                 put("tag", GROUP_TAG)
-                put("outbounds", JSONArray().apply { servers.forEach { put(it.id) } })
-                put("default", selectedId)
+                // Chain links are deliberately absent here: they are transports of a single
+                // server, not destinations to pick or measure. The panel keeps them out of its
+                // own selector the same way.
+                put("outbounds", JSONArray().apply { usable.forEach { put(it.id) } })
+                put("default", defaultTag)
                 // Matches the panel's own config: switching server should drop the
                 // connections still pinned to the previous one.
                 put("interrupt_exist_connections", true)
             })
-            servers.forEach { put(buildProxyOutbound(it, it.id)) }
+            usable.forEach { server ->
+                val (outbound, links) = buildServerOutbounds(server)
+                put(outbound)
+                links.forEach { put(it) }
+            }
             put(JSONObject().apply {
                 put("type", "direct")
                 put("tag", "direct")
@@ -128,6 +141,51 @@ object SingBoxConfigGenerator {
     }
 
     // ─────────────────────────────────────────────────────────────
+
+    /** True when this server's own outbound dials through a `detour` (a ShadowTLS chain). */
+    private fun dialsThroughChain(config: VpnConfig): Boolean {
+        if (config.rawOutbound.isBlank()) return false
+        return try {
+            JSONObject(config.rawOutbound).optString("detour").isNotBlank()
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
+     * The server's outbound plus the chain links it dials through, if any.
+     *
+     * Link tags are rewritten to be unique per server: two servers may dial through links the
+     * panel gave the same tag, and duplicate tags make the config invalid. Every `detour` that
+     * names a rewritten link is repointed to match.
+     */
+    private fun buildServerOutbounds(config: VpnConfig): Pair<JSONObject, List<JSONObject>> {
+        val main = buildProxyOutbound(config, config.id)
+        if (config.rawDependencies.isBlank()) return main to emptyList()
+
+        val raw = try {
+            JSONArray(config.rawDependencies)
+        } catch (_: Exception) {
+            return main to emptyList()
+        }
+
+        val renamed = HashMap<String, String>()
+        val links = ArrayList<JSONObject>(raw.length())
+        for (i in 0 until raw.length()) {
+            val link = raw.optJSONObject(i) ?: continue
+            val originalTag = link.optString("tag")
+            if (originalTag.isBlank()) continue
+            val uniqueTag = "${config.id}-link-$originalTag"
+            renamed[originalTag] = uniqueTag
+            links.add(JSONObject(link.toString()).apply { put("tag", uniqueTag) })
+        }
+
+        (listOf(main) + links).forEach { outbound ->
+            val detour = outbound.optString("detour")
+            if (detour.isNotBlank()) renamed[detour]?.let { outbound.put("detour", it) }
+        }
+        return main to links
+    }
 
     private fun buildProxyOutbound(config: VpnConfig, tag: String): JSONObject {
         // Subscriptions in sing-box format already carry a complete outbound. Reuse it rather

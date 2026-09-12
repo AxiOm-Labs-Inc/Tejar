@@ -74,7 +74,14 @@ data class VpnConfig(
     // expects, so there is nothing for us to get subtly wrong.
     val rawOutbound: String = "",
     /** sing-box outbound type as the server named it. Only meaningful with [rawOutbound]. */
-    val rawType: String = ""
+    val rawType: String = "",
+
+    // Outbounds this server dials *through*, verbatim, as a JSON array — the panel emits
+    // ShadowTLS as a chain: a shadowsocks outbound whose "detour" names a separate shadowtls
+    // outbound. Those links are not servers of their own, so they are carried here instead of
+    // appearing in the list; without them the core rejects the whole config with
+    // "dependency[...] not found for outbound[...]".
+    val rawDependencies: String = ""
 ) : Parcelable {
     val displayName: String get() = name.ifBlank { "$address:$port" }
     val protocolLabel: String get() = when (protocol) {

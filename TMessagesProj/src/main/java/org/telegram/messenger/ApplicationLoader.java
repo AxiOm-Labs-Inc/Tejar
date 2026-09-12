@@ -357,6 +357,9 @@ public class ApplicationLoader extends Application {
         // fragment is currently open. This fixes "proxy connecting" after leaving the screen.
         try {
             VpnConfigRepository vpnRepo = new VpnConfigRepository(applicationContext);
+            // Runs before anything reads these settings, and here rather than in the VPN
+            // screen so it also applies to users who never open it.
+            vpnRepo.applyForcedDefaultsOnce();
             VpnProxyManager vpnManager = VpnProxyManager.Companion.getInstance(applicationContext);
 
             // Wire up proxy ↔ Telegram globally (fires on every connect/disconnect).
