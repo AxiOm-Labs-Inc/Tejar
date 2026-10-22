@@ -382,9 +382,15 @@ public class ApplicationLoader extends Application {
                 }
             }
 
+            // Subscriptions that went stale while the app was closed are refreshed right away.
+            com.telegram.vpncore.SubscriptionUpdater.INSTANCE.refreshStaleAsync(applicationContext);
+
             ForegroundDetector.getInstance().addListener(new ForegroundDetector.Listener() {
                 @Override
                 public void onBecameForeground() {
+                    // Before the Energy Saving early returns: those only concern the tunnel,
+                    // and a long-backgrounded app is exactly when the list is likely stale.
+                    com.telegram.vpncore.SubscriptionUpdater.INSTANCE.refreshStaleAsync(applicationContext);
                     if (!vpnRepo.isEnergySaving()) return;
                     if (!vpnRepo.isVpnRunning()) return;
                     com.telegram.vpncore.VpnConfig config = vpnRepo.getActive();
