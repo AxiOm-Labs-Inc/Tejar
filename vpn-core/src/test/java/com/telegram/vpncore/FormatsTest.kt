@@ -20,11 +20,12 @@ class FormatsTest {
 
     @Test fun clashMixedProfile() {
         val r = parse("clash.yaml")
-        assertEquals(16, r.servers.size)
+        assertEquals(15, r.servers.size)
         assertEquals(
             mapOf(
                 "unsupported ss plugin kcptun" to 1,
                 "needs xray: xhttp" to 1,
+                "needs xray: tcp-http" to 1,
                 "unsupported type ssr" to 1
             ),
             r.skipCounts
@@ -61,7 +62,8 @@ class FormatsTest {
         val h2 = r.ob("VLESS H2").getJSONObject("transport")
         assertEquals("http", h2.getString("type"))
         assertEquals("/h2", h2.getString("path"))
-        assertEquals("/a", r.ob("VLESS HTTP").getJSONObject("transport").getString("path"))
+        // Clash "http" network is HTTP header obfuscation over TCP, which only xray speaks.
+        assertFalse(r.servers.any { it.name == "VLESS HTTP" })
 
         val trojan = r.ob("Trojan WS")
         assertEquals("httpupgrade", trojan.getJSONObject("transport").getString("type"))
@@ -70,6 +72,9 @@ class FormatsTest {
         val hy2 = r.ob("Hy2")
         assertEquals(50, hy2.getInt("up_mbps"))
         assertEquals(200, hy2.getInt("down_mbps"))
+        assertEquals("20000:30000", hy2.getJSONArray("server_ports").getString(0))
+        assertEquals("40000:40000", hy2.getJSONArray("server_ports").getString(1))
+        assertEquals("30s", hy2.getString("hop_interval"))
         assertEquals("obfspw", hy2.getJSONObject("obfs").getString("password"))
         val hy1 = r.ob("Hysteria1")
         assertEquals("authpass", hy1.getString("auth_str"))
@@ -92,7 +97,10 @@ class FormatsTest {
     }
 
     @Test fun clashXhttpEntryIsKeptForXray() {
-        val e = parse("clash.yaml").xrayCapable.single()
+        val xray = parse("clash.yaml").xrayCapable
+        assertEquals(setOf("VLESS XHTTP", "VLESS HTTP"), xray.map { it.name }.toSet())
+        assertTrue(xray.all { it.source == SkipSource.CLASH_PROXY })
+        val e = xray.first { it.name == "VLESS XHTTP" }
         assertEquals(SkipSource.CLASH_PROXY, e.source)
         assertEquals("VLESS XHTTP", e.name)
         assertEquals("xhttp", JSONObject(e.raw).getString("network"))

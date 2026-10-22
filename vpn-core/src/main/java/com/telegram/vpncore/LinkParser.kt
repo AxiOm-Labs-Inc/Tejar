@@ -286,6 +286,17 @@ object LinkParser {
 
     // ───────────────────────── Hysteria2 ──────────────────────────
 
+    /** "20000-30000,40000" -> ["20000:30000", "40000:40000"] (the core's range syntax); null if none. */
+    fun hopPorts(raw: String?): JSONArray? {
+        val ranges = csv(raw?.replace('/', ',')).mapNotNull { token ->
+            val parts = token.split('-', ':')
+            val from = parts[0].toIntOrNull() ?: return@mapNotNull null
+            val to = parts.getOrNull(1)?.toIntOrNull() ?: from
+            if (from in 1..65535 && to in from..65535) "$from:$to" else null
+        }
+        return if (ranges.isEmpty()) null else JSONArray(ranges)
+    }
+
     private fun parseHysteria2(link: String): VpnConfig {
         // hysteria2://password@host:port?params#name
         val uri = ParsedLink.parse(link)
@@ -301,6 +312,24 @@ object LinkParser {
         val obfsPassword = if (obfsType.equals("salamander", ignoreCase = true)) {
             uri.queryParam("obfs-password") ?: ""
         } else ""
+
+        // Port hopping has no VpnConfig field: carry it as a ready-made outbound instead.
+        hopPorts(uri.queryParam("mport"))?.let { hop ->
+            return outboundConfig("hysteria2", uri, host, port, link) {
+                put("server_ports", hop)
+                put("password", password)
+                if (obfsPassword.isNotEmpty()) {
+                    put("obfs", JSONObject().put("type", "salamander").put("password", obfsPassword))
+                }
+                uri.queryParam("up")?.toIntOrNull()?.takeIf { it > 0 }?.let { put("up_mbps", it) }
+                uri.queryParam("down")?.toIntOrNull()?.takeIf { it > 0 }?.let { put("down_mbps", it) }
+                put("tls", JSONObject().apply {
+                    put("enabled", true)
+                    put("server_name", (uri.queryParam("sni") ?: "").ifBlank { host })
+                    if (uri.isInsecure()) put("insecure", true)
+                })
+            }
+        }
 
         return VpnConfig(
             name = name,

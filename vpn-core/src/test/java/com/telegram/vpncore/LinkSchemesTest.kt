@@ -3,6 +3,7 @@ package com.telegram.vpncore
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -59,6 +60,27 @@ class LinkSchemesTest {
 
     @Test fun hysteria2StillItsOwnScheme() {
         assertEquals(VpnProtocol.HYSTERIA2, LinkParser.parse("hysteria2://pw@h.example.com:443").protocol)
+    }
+
+    @Test fun hysteria2PortHoppingViaMport() {
+        val c = LinkParser.parse("hysteria2://pw@hy.example.com:443?mport=20000-30000&sni=s.example.com&obfs=salamander&obfs-password=op&insecure=1#Hop")
+        val o = raw(c)
+        assertEquals(VpnProtocol.HYSTERIA2, c.protocol)
+        assertEquals("hysteria2", c.rawType)
+        assertEquals("20000:30000", o.getJSONArray("server_ports").getString(0))
+        assertEquals(443, o.getInt("server_port"))
+        assertEquals("pw", o.getString("password"))
+        assertEquals("op", o.getJSONObject("obfs").getString("password"))
+        assertEquals("s.example.com", o.getJSONObject("tls").getString("server_name"))
+        assertTrue(o.getJSONObject("tls").getBoolean("insecure"))
+        // Without mport the plain field-based config is unchanged.
+        assertEquals("", LinkParser.parse("hysteria2://pw@hy.example.com:443").rawOutbound)
+    }
+
+    @Test fun hopPortsParsing() {
+        assertEquals("[\"1000:2000\",\"3000:3000\"]", LinkParser.hopPorts("1000-2000,3000")!!.toString())
+        assertNull(LinkParser.hopPorts("abc"))
+        assertNull(LinkParser.hopPorts(null))
     }
 
     @Test fun anytls() {
