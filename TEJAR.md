@@ -3,7 +3,7 @@
 Fork of [Telegram for Android](https://github.com/DrKLO/Telegram) with an integrated VPN/proxy
 module (`vpn-core`) powered by [sing-box](https://github.com/SagerNet/sing-box).
 
-**Current release:** [v1.5.0](https://github.com/arsenii-cmd/Tejar/releases/latest) — Telegram 12.10.0 base, sing-box core, Hysteria2 and NaiveProxy support.
+**Current release:** [v1.5.2](https://github.com/AxiOm-Labs-Inc/Tejar/releases/latest) — Telegram 12.10.0 base, sing-box core, Hysteria2 and NaiveProxy support.
 
 ## Features
 
@@ -44,7 +44,7 @@ Two independent version pairs in `gradle.properties`:
 | Property | Current | Meaning |
 |---|---|---|
 | `APP_VERSION_*` | 12.10.0 / 7031 | Upstream Telegram base |
-| `TEJAR_VERSION_*` | 1.5.0 / 6975 | Tejar release (APK versionCode = `6975*10 + abiCode`) |
+| `TEJAR_VERSION_*` | 1.5.2 / 6977 | Tejar release (APK versionCode = `6977*10 + abiCode`) |
 
 ## License
 
