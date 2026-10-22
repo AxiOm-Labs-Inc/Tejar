@@ -17,6 +17,7 @@ import android.widget.*
 import com.telegram.vpncore.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.drop
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.ui.ActionBar.ActionBar
 import org.telegram.ui.ActionBar.BaseFragment
@@ -470,6 +471,17 @@ class VpnSettingsActivity : BaseFragment() {
                     pendingMeasureAfterConnect = false
                     manager.measureLatencyAsync()
                 }
+            }
+        }
+
+        // A refresh can finish while this screen is open (manual, or the automatic one on
+        // foreground); reload from storage so the lists never show servers that are gone.
+        scope.launch {
+            SubscriptionUpdater.lastRefresh.drop(1).collect {
+                configs.clear()
+                configs.addAll(repository.getAll())
+                rebuildConfigsList()
+                rebuildSubscriptionsList(context)
             }
         }
 
@@ -940,36 +952,24 @@ class VpnSettingsActivity : BaseFragment() {
 
     private fun fetchSubscription(context: Context, sub: VpnSubscription) {
         scope.launch {
-            try {
-                val fetched = SubscriptionFetcher.fetch(sub.url)
-                if (fetched.isEmpty()) {
-                    toast("No servers found in subscription")
-                    return@launch
+            when (val result = SubscriptionUpdater.refresh(context, sub)) {
+                is SubscriptionUpdater.Result.Failure ->
+                    toast("Failed to fetch: ${result.message}", Toast.LENGTH_LONG)
+                is SubscriptionUpdater.Result.Success -> {
+                    // The updater already persisted everything and reloaded the core; the
+                    // lastRefresh collector rebuilds the lists, this only reports the outcome.
+                    if (!result.changed) {
+                        toast("Servers are up to date")
+                        return@launch
+                    }
+                    // Reload here too: the collector may not have run yet, and auto-select
+                    // picks its starter from [configs].
+                    configs.clear()
+                    configs.addAll(repository.getAll())
+                    rebuildConfigsList()
+                    toast("Loaded ${result.fetched.size} servers")
+                    beginAutoSelect(context, result.fetched.map { it.id }.toSet())
                 }
-                // Remove old configs from this subscription
-                val oldSub = subscriptionRepository.getById(sub.id)
-                oldSub?.configIds?.forEach { repository.delete(it) }
-
-                // Save new configs
-                fetched.forEach { repository.save(it) }
-                val updatedSub = sub.copy(
-                    lastUpdated = System.currentTimeMillis(),
-                    configIds = fetched.map { it.id }
-                )
-                subscriptionRepository.save(updatedSub)
-
-                manager.invalidateCachedConfig()
-                configs.clear()
-                configs.addAll(repository.getAll())
-                rebuildConfigsList()
-                rebuildSubscriptionsList(context)
-
-                toast("Loaded ${fetched.size} servers")
-
-                val fetchedIds = fetched.map { it.id }.toSet()
-                beginAutoSelect(context, fetchedIds)
-            } catch (e: Exception) {
-                toast("Failed to fetch: ${e.message}", Toast.LENGTH_LONG)
             }
         }
     }

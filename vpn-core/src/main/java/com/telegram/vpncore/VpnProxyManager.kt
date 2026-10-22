@@ -200,6 +200,36 @@ class VpnProxyManager private constructor(private val context: Context) {
         cachedJsonConfig = null
     }
 
+    /**
+     * Applies a changed server list to a running tunnel (subscription refresh).
+     *
+     * While Connected the core is hot-reloaded with the new list: the outbounds live in the
+     * generated JSON, so a cached copy would keep dialling servers that no longer exist. In
+     * any other state only the cache is dropped — a Paused tunnel then cold-starts from the
+     * fresh list on resume, and nothing is running that could use the new one earlier.
+     */
+    suspend fun reloadServers() {
+        mutex.withLock {
+            invalidateCachedConfig()
+            val current = _state.value as? ProxyState.Connected ?: return
+            val stored = runCatching { configRepository.getAll() }.getOrDefault(emptyList())
+            val config = stored.firstOrNull { it.id == current.config.id }
+                ?: configRepository.getActive()
+                ?: stored.firstOrNull()
+            if (config == null) {
+                Log.w(TAG, "reloadServers: no servers left, keeping the running core as is")
+                return
+            }
+            cachedJsonConfig = SingBoxConfigGenerator.generate(
+                stored, config.id, LOCAL_PORT, socksUsername, socksPassword
+            )
+            // Reuses the warm-reload path, which already falls back to a full start. Calling
+            // it while Connected is safe: startForeground and startWatchdog are both
+            // idempotent (the notification is updated, the old watchdog is cancelled).
+            resumeProxyLocked(config)
+        }
+    }
+
     fun parseLink(uri: String): Result<VpnConfig> = runCatching {
         LinkParser.parse(uri)
     }
