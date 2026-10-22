@@ -14,5 +14,6 @@ vmess://eyJ2IjogIjIiLCAicHMiOiAiVk1lc3MgbUtDUCIsICJhZGQiOiAia2NwLmV4YW1wbGUuY29t
 ss://YWVzLTI1Ni1nY206cGFzczEyMw@ss.example.com:8388#SS base64 userinfo
 ss://chacha20-ietf-poly1305:plain%2Bpass@ss2.example.com:8389#SS plain userinfo
 hysteria2://hy2pass@hy2.example.com:8443?sni=h.example.com&obfs=salamander&obfs-password=obfspw&insecure=1#Hy2 ⚡
-tuic://uuid:pw@tuic.example.com:443?congestion_control=bbr#TUIC
+tuic://aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee:tuicpw@tuic.example.com:443?congestion_control=bbr&alpn=h3#TUIC
+ssh://root@ssh.example.com:22#SSH
 vless://broken

@@ -177,9 +177,9 @@ class LinkParserTest {
 
     @Test fun unsupportedSchemeCarriesReason() {
         val e = assertThrows(UnsupportedEntryException::class.java) {
-            LinkParser.parse("tuic://uuid:secret@t.example.com:443")
+            LinkParser.parse("ssh://uuid:secret@t.example.com:443")
         }
-        assertEquals("unsupported scheme tuic", e.reason)
+        assertEquals("unsupported scheme ssh", e.reason)
         assertFalse(e.xrayCapable)
         assertFalse(e.message!!.contains("secret"))
     }

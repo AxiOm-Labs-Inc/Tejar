@@ -17,12 +17,12 @@ class SubscriptionParsingTest {
     private fun ParseResult.byName(name: String) = servers.first { it.name == name }
 
     private fun assertLinkList(r: ParseResult) {
-        assertEquals(11, r.servers.size)
+        assertEquals(12, r.servers.size)
         assertEquals(
             mapOf(
                 "needs xray: xhttp" to 1,
                 "needs xray: kcp" to 2,
-                "unsupported scheme tuic" to 1,
+                "unsupported scheme ssh" to 1,
                 "invalid link" to 1
             ),
             r.skipCounts
@@ -135,13 +135,13 @@ class SubscriptionParsingTest {
     @Test fun describeCountsRepeatedReasons() {
         val r = parse("links_plain.txt")
         assertEquals(
-            "needs xray: xhttp, needs xray: kcp x2, unsupported scheme tuic, invalid link",
+            "needs xray: xhttp, needs xray: kcp x2, unsupported scheme ssh, invalid link",
             ParseResult.describe(r.skipped)
         )
     }
 
     @Test fun onlyUnusableEntriesStillReportReasons() {
-        val r = SubscriptionFetcher.parseSubscription("tuic://u:p@h:1\nvless://nope\n")
+        val r = SubscriptionFetcher.parseSubscription("ssh://u:p@h:1\nvless://nope\n")
         assertTrue(r.servers.isEmpty())
         assertNotNull(r.skipped)
         assertEquals(2, r.skipped.size)

@@ -206,6 +206,9 @@ class VpnConfigRepository(context: Context) {
         put("shortId", c.shortId)
         put("spiderX", c.spiderX)
         put("ssMethod", c.ssMethod)
+        put("ssPlugin", c.ssPlugin)
+        put("ssPluginOpts", c.ssPluginOpts)
+        put("alpn", c.alpn)
         // Hysteria2 / Naive fields used to be missing here: the link parsed correctly but the
         // stored copy lost its obfs password and http username, so every config reloaded from
         // disk dialled without them and the server never answered.
@@ -242,6 +245,9 @@ class VpnConfigRepository(context: Context) {
         shortId = j.optString("shortId"),
         spiderX = j.optString("spiderX"),
         ssMethod = j.optString("ssMethod", "aes-256-gcm"),
+        ssPlugin = j.optString("ssPlugin"),
+        ssPluginOpts = j.optString("ssPluginOpts"),
+        alpn = j.optString("alpn"),
         obfsPassword = j.optString("obfsPassword"),
         upMbps = j.optInt("upMbps", 0),
         downMbps = j.optInt("downMbps", 0),

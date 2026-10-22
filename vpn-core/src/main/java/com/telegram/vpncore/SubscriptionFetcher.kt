@@ -204,19 +204,5 @@ object SubscriptionFetcher {
         null
     }
 
-    // Must stay in sync with LinkParser.parse — a scheme missing here is dropped before
-    // the parser ever sees it, so the server silently never shows up in the list.
-    private fun looksLikeVpnLink(s: String): Boolean =
-        s.startsWith("vless://", ignoreCase = true) ||
-        s.startsWith("vmess://", ignoreCase = true) ||
-        s.startsWith("ss://", ignoreCase = true) ||
-        s.startsWith("trojan://", ignoreCase = true) ||
-        s.startsWith("hysteria2://", ignoreCase = true) ||
-        s.startsWith("hy2://", ignoreCase = true) ||
-        s.startsWith("naive+https://", ignoreCase = true) ||
-        // NaiveProxy as the panel actually emits it: https://user:pass@host:port
-        ((s.startsWith("http://", ignoreCase = true) || s.startsWith("https://", ignoreCase = true)) &&
-            s.substringAfter("://").substringBefore('/').substringBefore('?').let {
-                it.contains('@') && it.substringBefore('@').contains(':')
-            })
+    private fun looksLikeVpnLink(s: String): Boolean = LinkParser.looksLikeShareLink(s)
 }

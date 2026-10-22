@@ -45,14 +45,15 @@ class ParsedLink(
                     rest = rest.substring(0, i)
                 }
             }
-            val slash = rest.indexOf('/')
-            val authority = if (slash >= 0) rest.substring(0, slash) else rest
-            val path = if (slash >= 0) rest.substring(slash) else ""
-
-            // The LAST '@' separates credentials: passwords may contain a literal '@'.
-            val at = authority.lastIndexOf('@')
-            val userInfo = if (at >= 0) percentDecode(authority.substring(0, at), plusIsSpace = false) else null
-            val hostPort = if (at >= 0) authority.substring(at + 1) else authority
+            // The LAST '@' separates credentials: passwords may contain a literal '@', and
+            // base64 keys (WireGuard) may contain a literal '/', so look for it before
+            // splitting off the path.
+            val at = rest.lastIndexOf('@')
+            val userInfo = if (at >= 0) percentDecode(rest.substring(0, at), plusIsSpace = false) else null
+            val afterUser = if (at >= 0) rest.substring(at + 1) else rest
+            val slash = afterUser.indexOf('/')
+            val hostPort = if (slash >= 0) afterUser.substring(0, slash) else afterUser
+            val path = if (slash >= 0) afterUser.substring(slash) else ""
 
             val host: String
             var portText = ""
