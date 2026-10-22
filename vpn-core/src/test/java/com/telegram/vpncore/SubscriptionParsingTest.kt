@@ -1,5 +1,6 @@
 package com.telegram.vpncore
 
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -17,18 +18,13 @@ class SubscriptionParsingTest {
     private fun ParseResult.byName(name: String) = servers.first { it.name == name }
 
     private fun assertLinkList(r: ParseResult) {
-        assertEquals(12, r.servers.size)
+        assertEquals(15, r.servers.size)
         assertEquals(
-            mapOf(
-                "needs xray: xhttp" to 1,
-                "needs xray: kcp" to 2,
-                "unsupported scheme ssh" to 1,
-                "invalid link" to 1
-            ),
+            mapOf("unsupported scheme ssh" to 1, "invalid link" to 1),
             r.skipCounts
         )
         // The plain https support URL and the "#profile-title" line are not counted as anything.
-        assertEquals(5, r.skipped.size)
+        assertEquals(2, r.skipped.size)
 
         val reality = r.byName("🇩🇪 Germany | Reality")
         assertEquals(SecurityType.REALITY, reality.security)
@@ -68,12 +64,12 @@ class SubscriptionParsingTest {
         assertEquals("obfspw", hy2.obfsPassword)
         assertTrue(hy2.allowInsecure)
 
-        // Entries stage E (xray) can pick up keep their original link and are tagged.
-        val xray = r.xrayCapable
-        assertEquals(3, xray.size)
-        assertTrue(xray.all { it.source == SkipSource.LINK && it.raw.contains("://") })
-        assertTrue(xray.any { it.raw.startsWith("vless://") && it.raw.contains("type=xhttp") })
-        assertFalse(r.skipped.first { it.reason.startsWith("unsupported scheme") }.xrayCapable)
+        // xhttp / mKCP entries are not skipped any more: they run in the bundled xray process.
+        val xray = r.servers.filter { it.rawType == "xray" }
+        assertEquals(setOf("XHTTP node", "Trojan mKCP", "VMess mKCP"), xray.map { it.name }.toSet())
+        assertEquals("xhttp", JSONObject(xray.first { it.name == "XHTTP node" }.rawOutbound)
+            .getJSONObject("streamSettings").getString("network"))
+        assertTrue(r.xrayCapable.isEmpty())
     }
 
     @Test fun plainListWithEmojiSpacesAndIpv6() = assertLinkList(parse("links_plain.txt"))
@@ -89,17 +85,18 @@ class SubscriptionParsingTest {
 
     @Test fun htmlPageLinks() {
         val r = parse("page.html")
-        assertEquals(listOf("Page node", "Page trojan", "Page ss", "VMess WS 🚀", "Page tuic"), r.servers.map { it.name })
-        assertEquals(mapOf("needs xray: xhttp" to 1), r.skipCounts)
+        assertEquals(listOf("Page node", "Page trojan", "Page ss", "VMess WS 🚀", "Page xhttp", "Page tuic"), r.servers.map { it.name })
+        assertTrue(r.skipped.isEmpty())
+        assertEquals("xray", r.servers[4].rawType)
         // Query separators arrive as &amp; and used to cut the link at the first parameter.
         val node = r.servers[0]
         assertEquals(NetworkType.WS, node.network)
         assertEquals("/p", node.path)
         assertEquals(SecurityType.TLS, node.security)
         assertEquals("h1.example.com", node.sni)
-        assertEquals("tuic", r.servers[4].rawType)
+        assertEquals("tuic", r.servers[5].rawType)
         // wss:// in running text is not an ss:// link.
-        assertEquals(5, r.servers.size)
+        assertEquals(6, r.servers.size)
     }
 
     @Test fun singBoxJsonFromMarzban() {
@@ -143,7 +140,7 @@ class SubscriptionParsingTest {
     @Test fun describeCountsRepeatedReasons() {
         val r = parse("links_plain.txt")
         assertEquals(
-            "needs xray: xhttp, needs xray: kcp x2, unsupported scheme ssh, invalid link",
+            "unsupported scheme ssh, invalid link",
             ParseResult.describe(r.skipped)
         )
     }

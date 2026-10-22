@@ -61,6 +61,16 @@ object XrayJsonParser {
                 try {
                     results.add(OutboundConfigs.fromOutbound(toOutbound(ob), name, stableIds = usedIds))
                 } catch (e: UnsupportedEntryException) {
+                    if (e.xrayCapable) {
+                        // Already xray's own format: run it as is in the bundled xray process.
+                        val server = runCatching {
+                            OutboundConfigs.xrayServer(XrayOutbounds.sanitize(ob), name, stableIds = usedIds)
+                        }.getOrNull()
+                        if (server != null) {
+                            results.add(server)
+                            continue
+                        }
+                    }
                     Log.w(TAG, "Skipping xray outbound: ${e.reason}")
                     skipped.add(
                         SkippedEntry(
@@ -82,7 +92,9 @@ object XrayJsonParser {
         val settings = ob.optJSONObject("settings") ?: JSONObject()
         val stream = ob.optJSONObject("streamSettings") ?: JSONObject()
         if (stream.optJSONObject("sockopt")?.optString("dialerProxy").orEmpty().isNotBlank()) {
-            throw UnsupportedEntryException(SkippedEntry.needsXray("dialerProxy"), xrayCapable = true)
+            // Reproducing the chain would need a second hop we do not run; sending it direct
+            // instead would be a silent downgrade.
+            throw UnsupportedEntryException("unsupported dialerProxy chain")
         }
 
         val o = JSONObject()

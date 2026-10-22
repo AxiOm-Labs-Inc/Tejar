@@ -122,7 +122,25 @@ object SubscriptionFetcher {
     /**
      * @param fetchText downloads a URL for `ssconf://` entries inside the body (null = cannot).
      */
-    internal fun parseSubscription(raw: String, fetchText: ((String) -> String?)? = null): ParseResult {
+    internal fun parseSubscription(raw: String, fetchText: ((String) -> String?)? = null): ParseResult =
+        parseFormats(raw, fetchText).let { it.copy(servers = uniqueIds(it.servers)) }
+
+    /**
+     * Xray servers from links get ids derived from their content, so two identical entries
+     * would share a tag; number the repeats (the repository would otherwise collapse them).
+     */
+    private fun uniqueIds(servers: List<VpnConfig>): List<VpnConfig> {
+        val seen = HashSet<String>()
+        return servers.map { s ->
+            if (seen.add(s.id)) s else {
+                var n = 2
+                while (!seen.add("${s.id}-$n")) n++
+                s.copy(id = "${s.id}-$n")
+            }
+        }
+    }
+
+    private fun parseFormats(raw: String, fetchText: ((String) -> String?)?): ParseResult {
         val trimmed = raw.trim()
 
         // 0. sing-box config document — use the panel's own outbounds instead of re-deriving them
@@ -206,6 +224,16 @@ object SubscriptionFetcher {
         try {
             results.add(LinkParser.parse(link))
         } catch (e: UnsupportedEntryException) {
+            if (e.xrayCapable) {
+                // The bundled xray process can serve it; sing-box reaches it over local SOCKS.
+                val server = runCatching {
+                    OutboundConfigs.xrayServer(XrayOutbounds.fromLink(link), XrayOutbounds.nameOfLink(link), rawLink = link)
+                }.getOrNull()
+                if (server != null) {
+                    results.add(server)
+                    return
+                }
+            }
             Log.w(TAG, "Skipping link: ${e.reason}")
             skipped.add(SkippedEntry(e.reason, raw = link, xrayCapable = e.xrayCapable))
         } catch (e: Exception) {

@@ -24,19 +24,25 @@ object SingBoxConfigGenerator {
      * @param servers every server to make available; each becomes an outbound tagged with
      *        its [VpnConfig.id], so measurements can be mapped back without ambiguity.
      * @param selectedId the server the selector starts on.
+     * @param xrayEndpoints where each xray-run server (see [XrayConfigBuilder]) listens; those
+     *        become plain SOCKS outbounds here, and one without an endpoint is left out.
      */
     fun generate(
         servers: List<VpnConfig>,
         selectedId: String,
         localPort: Int = 10808,
         socksUser: String,
-        socksPass: String
+        socksPass: String,
+        xrayEndpoints: Map<String, XrayEndpoint> = emptyMap()
     ): String {
         require(servers.isNotEmpty()) { "No servers to build a config from" }
         // A server that dials through a chain whose links we don't have (an entry saved before
         // chains were parsed) makes the core reject the ENTIRE config — every other server goes
         // down with it. Leave those out; a subscription refresh restores them complete.
-        val usable = servers.filter { it.rawDependencies.isNotBlank() || !dialsThroughChain(it) }
+        val usable = servers.filter {
+            if (XrayConfigBuilder.isXray(it)) it.id in xrayEndpoints
+            else it.rawDependencies.isNotBlank() || !dialsThroughChain(it)
+        }
         require(usable.isNotEmpty()) { "No servers with a reproducible outbound" }
         val defaultTag = if (usable.any { it.id == selectedId }) selectedId else usable.first().id
         val root = JSONObject()
@@ -80,6 +86,10 @@ object SingBoxConfigGenerator {
                 put("interrupt_exist_connections", true)
             })
             usable.filterNot(::isEndpoint).forEach { server ->
+                if (XrayConfigBuilder.isXray(server)) {
+                    put(XrayConfigBuilder.socksOutbound(server.id, xrayEndpoints.getValue(server.id)))
+                    return@forEach
+                }
                 val (outbound, links) = buildServerOutbounds(server)
                 put(outbound)
                 links.forEach { put(it) }

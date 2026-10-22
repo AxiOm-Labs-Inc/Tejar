@@ -13,14 +13,29 @@ import io.nekohasekai.libbox.Libbox
 interface ServerValidator {
     /** Null when the core accepts [config]; otherwise the core's error text. */
     fun validate(config: VpnConfig): String?
+
+    companion object {
+        /** Returned for xray-run servers when the xray binary is not shipped / not executable. */
+        const val XRAY_UNAVAILABLE = "xray core unavailable"
+    }
 }
 
-/** Real validator: `Libbox.checkConfig` on a config holding only this server (and its chain). */
-class LibboxServerValidator(private val prepare: () -> Unit) : ServerValidator {
+/**
+ * Real validator: `Libbox.checkConfig` on a config holding only this server (and its chain).
+ * [xrayCheck] validates an xray-run server's own outbound (`xray run -test`); null skips that.
+ */
+class LibboxServerValidator(
+    private val prepare: () -> Unit,
+    private val xrayCheck: ((VpnConfig) -> String?)? = null
+) : ServerValidator {
     override fun validate(config: VpnConfig): String? = try {
         prepare()
+        val isXray = XrayConfigBuilder.isXray(config)
+        if (isXray) xrayCheck?.invoke(config)?.let { return it }
         val json = SingBoxConfigGenerator.generate(
-            listOf(config), config.id, socksUser = "check", socksPass = "check"
+            listOf(config), config.id, socksUser = "check", socksPass = "check",
+            // sing-box only sees a SOCKS outbound for an xray server; any endpoint will do.
+            xrayEndpoints = if (isXray) mapOf(config.id to XrayEndpoint(1, "check", "check")) else emptyMap()
         )
         Libbox.checkConfig(json)
         null
@@ -44,7 +59,11 @@ fun ServerValidator.filter(servers: List<VpnConfig>): ValidationOutcome {
         } else {
             // Type and the core's message only: no name, address or link.
             Log.w(TAG, "Core rejected a ${server.protocolLabel} server: ${error.take(160)}")
-            rejected.add(SkippedEntry(SkippedEntry.REJECTED_BY_CORE))
+            rejected.add(
+                SkippedEntry(
+                    if (error == ServerValidator.XRAY_UNAVAILABLE) error else SkippedEntry.REJECTED_BY_CORE
+                )
+            )
         }
     }
     return ValidationOutcome(valid, rejected)
