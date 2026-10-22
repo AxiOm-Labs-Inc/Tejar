@@ -134,6 +134,9 @@ object ClashSubscriptionParser {
                     o.put("obfs", JSONObject().put("type", it).put("password", p.str("obfs-password")))
                 }
                 tls(p, o, enabledByDefault = true)
+                // Port hopping: sing-box takes ranges as "20000:30000".
+                hopPorts(p.str("ports"))?.let { o.put("server_ports", it) }
+                p.str("hop-interval").toIntOrNull()?.takeIf { it > 0 }?.let { o.put("hop_interval", "${it}s") }
             }
             "tuic" -> {
                 o.put("type", "tuic")
@@ -180,6 +183,9 @@ object ClashSubscriptionParser {
         }
         return o
     }
+
+    /** "20000-30000,40000" -> ["20000:30000", "40000:40000"]; null when empty. */
+    private fun hopPorts(raw: String): JSONArray? = LinkParser.hopPorts(raw)
 
     private fun ssPlugin(p: Map<*, *>, o: JSONObject) {
         val plugin = p.str("plugin")
@@ -267,16 +273,11 @@ object ClashSubscriptionParser {
                     h2.str("path").takeIf { it.isNotBlank() }?.let { put("path", it) }
                 }
             }
-            "http" -> {
-                val http = p.map("http-opts")
-                JSONObject().put("type", "http").apply {
-                    val path = (http["path"] as? List<*>)?.firstOrNull()?.toString() ?: http.str("path")
-                    if (path.isNotBlank()) put("path", path)
-                    (http["method"] as? String)?.takeIf { it.isNotBlank() }?.let { put("method", it) }
-                    val headers = http.map("headers")
-                    (headers["Host"] as? List<*>)?.map { it.toString() }?.let { put("host", JSONArray(it)) }
-                }
-            }
+            // Clash "http" is HTTP header obfuscation over TCP (xray: tcp + headerType=http),
+            // not sing-box's "http" transport, which is a different wire format. "h2" below is.
+            "http" -> throw UnsupportedEntryException(
+                SkippedEntry.needsXray("tcp-http"), xrayCapable = true
+            )
             "httpupgrade" -> JSONObject().put("type", "httpupgrade")
             "quic" -> JSONObject().put("type", "quic")
             else -> throw UnsupportedEntryException(
