@@ -49,12 +49,13 @@ object SubscriptionFetcher {
         var onlySkipped: ParseResult? = null
         for (ua in USER_AGENTS) {
             try {
-                val raw = downloadText(url, ua)
+                val response = downloadText(url, ua)
+                val raw = response.body
                 if (raw.isBlank()) continue
                 val results = parseSubscription(raw) { ssconfUrl ->
                     // Same https-only rules as the subscription itself; null = unreachable.
-                    try { downloadText(ssconfUrl, USER_AGENTS.last()) } catch (e: Exception) { null }
-                }
+                    try { downloadText(ssconfUrl, USER_AGENTS.last()).body } catch (e: Exception) { null }
+                }.copy(info = response.info)
                 if (results.servers.isNotEmpty()) {
                     Log.d(TAG, "Fetched ${results.servers.size} configs with UA=$ua, " +
                         "skipped ${results.skipped.size}")
@@ -74,7 +75,9 @@ object SubscriptionFetcher {
 
     // ─────────────────────── Download ────────────────────────────
 
-    private fun downloadText(url: String, userAgent: String): String {
+    private class Response(val body: String, val info: SubscriptionInfo)
+
+    private fun downloadText(url: String, userAgent: String): Response {
         // Follow redirects manually so we can reject any hop that downgrades to plain HTTP
         // (java.net's instanceFollowRedirects silently follows https->http, opening it up to MITM).
         var currentUrl = url
@@ -91,7 +94,10 @@ object SubscriptionFetcher {
             try {
                 val code = conn.responseCode
                 when (code) {
-                    200 -> return conn.inputStream.bufferedReader().readText()
+                    200 -> return Response(
+                        conn.inputStream.bufferedReader().readText(),
+                        SubscriptionInfo.fromHeaders { conn.getHeaderField(it) }
+                    )
                     in 300..399 -> {
                         val location = conn.getHeaderField("Location")
                             ?: throw Exception("HTTP $code without Location")

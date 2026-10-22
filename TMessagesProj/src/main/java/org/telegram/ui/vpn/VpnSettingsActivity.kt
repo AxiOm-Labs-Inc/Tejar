@@ -496,6 +496,14 @@ class VpnSettingsActivity : BaseFragment() {
     private fun onConnectClicked() {
         val text = linkInput.text.toString().trim()
         if (text.isBlank()) return
+        // A subscription URL (or an "add to app" deep link for one) is not a server link.
+        val asSubscription = SubscriptionImport.unwrap(text)
+        if (asSubscription is SubscriptionImport.Result.Subscription ||
+            asSubscription is SubscriptionImport.Result.Rejected
+        ) {
+            context?.let { offerSubscription(it, asSubscription) }
+            return
+        }
         manager.parseLink(text)
             .onSuccess { config ->
                 // Same as picking a saved server: an explicit choice is held by auto-select.
@@ -523,6 +531,36 @@ class VpnSettingsActivity : BaseFragment() {
             return
         }
         linkInput.setText(text)
+        val ctx = context ?: return
+        val asSubscription = SubscriptionImport.unwrap(text)
+        if (asSubscription !is SubscriptionImport.Result.NotSubscription) offerSubscription(ctx, asSubscription)
+    }
+
+    /** Asks before adding a pasted subscription URL; a rejected link just explains why. */
+    private fun offerSubscription(context: Context, result: SubscriptionImport.Result) {
+        when (result) {
+            is SubscriptionImport.Result.Rejected -> showError(result.message)
+            is SubscriptionImport.Result.NotSubscription -> {}
+            is SubscriptionImport.Result.Subscription -> {
+                val label = result.name.ifBlank { android.net.Uri.parse(result.url).host ?: "subscription" }
+                AlertDialog.Builder(context)
+                    .setTitle("Add subscription?")
+                    .setMessage("\"$label\" looks like a subscription link, not a server. Add it as a subscription?")
+                    .setPositiveButton("Add") { _, _ ->
+                        linkInput.setText("")
+                        addSubscription(context, result.name, result.url)
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+            }
+        }
+    }
+
+    private fun addSubscription(context: Context, name: String, url: String) {
+        val sub = VpnSubscription(name = name.ifBlank { VpnSubscription.DEFAULT_NAME }, url = url)
+        subscriptionRepository.save(sub)
+        rebuildSubscriptionsList(context)
+        fetchSubscription(context, sub)
     }
 
     private fun previewParse(text: String) {
@@ -531,7 +569,14 @@ class VpnSettingsActivity : BaseFragment() {
                 configInfoView.text = buildInfo(config)
                 configInfoView.visibility = View.VISIBLE
             }
-            .onFailure { configInfoView.visibility = View.GONE }
+            .onFailure {
+                if (SubscriptionImport.unwrap(text) is SubscriptionImport.Result.Subscription) {
+                    configInfoView.text = "Subscription link \u2014 press Connect to add it as a subscription"
+                    configInfoView.visibility = View.VISIBLE
+                } else {
+                    configInfoView.visibility = View.GONE
+                }
+            }
     }
 
     // ─────────────────────────── UI State ─────────────────────────
@@ -937,13 +982,16 @@ class VpnSettingsActivity : BaseFragment() {
             .setTitle("Add Subscription")
             .setView(layout)
             .setPositiveButton("Add") { _, _ ->
-                val name = nameInput.text.toString().trim().ifBlank { "Subscription" }
+                val typedName = nameInput.text.toString().trim()
                 val url = urlInput.text.toString().trim()
                 if (url.isNotEmpty()) {
-                    val sub = VpnSubscription(name = name, url = url)
-                    subscriptionRepository.save(sub)
-                    rebuildSubscriptionsList(context)
-                    fetchSubscription(context, sub)
+                    when (val target = SubscriptionImport.unwrap(url)) {
+                        is SubscriptionImport.Result.Subscription ->
+                            addSubscription(context, typedName.ifBlank { target.name }, target.url)
+                        is SubscriptionImport.Result.Rejected -> toast(target.message, Toast.LENGTH_LONG)
+                        is SubscriptionImport.Result.NotSubscription ->
+                            toast("Enter an https:// subscription URL", Toast.LENGTH_LONG)
+                    }
                 }
             }
             .setNegativeButton("Cancel", null)
@@ -1108,6 +1156,31 @@ class VpnSettingsActivity : BaseFragment() {
                     textSize = 11f
                 }
                 textBlock.addView(dateView)
+            }
+            sub.quotaText()?.let { quota ->
+                textBlock.addView(TextView(context).apply {
+                    text = quota
+                    setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText))
+                    textSize = 11f
+                })
+            }
+            // Panel-provided pages, https only (the parser drops anything else).
+            for ((label, link) in listOf("Account page" to sub.webPageUrl, "Support" to sub.supportUrl)) {
+                if (!link.startsWith("https://", ignoreCase = true)) continue
+                textBlock.addView(TextView(context).apply {
+                    text = label
+                    setTextColor(COLOR_ACCENT)
+                    textSize = 11f
+                    setOnClickListener {
+                        try {
+                            context.startActivity(
+                                android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(link))
+                            )
+                        } catch (_: Exception) {
+                            toast("No app can open this link")
+                        }
+                    }
+                })
             }
             row.addView(textBlock)
 

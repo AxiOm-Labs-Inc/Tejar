@@ -95,6 +95,14 @@ class VpnSubscriptionRepository(context: Context) {
         put("url", s.url)
         put("lastUpdated", s.lastUpdated)
         put("configIds", JSONArray(s.configIds))
+        put("hasUsage", s.hasUsage)
+        put("uploadBytes", s.uploadBytes)
+        put("downloadBytes", s.downloadBytes)
+        put("totalBytes", s.totalBytes)
+        put("expireAt", s.expireAt)
+        put("updateIntervalHours", s.updateIntervalHours)
+        put("webPageUrl", s.webPageUrl)
+        put("supportUrl", s.supportUrl)
     }
 
     private fun deserialize(j: JSONObject): VpnSubscription {
@@ -105,7 +113,15 @@ class VpnSubscriptionRepository(context: Context) {
             name = j.optString("name", ""),
             url = j.optString("url", ""),
             lastUpdated = j.optLong("lastUpdated", 0L),
-            configIds = ids
+            configIds = ids,
+            hasUsage = j.optBoolean("hasUsage", false),
+            uploadBytes = j.optLong("uploadBytes", 0L),
+            downloadBytes = j.optLong("downloadBytes", 0L),
+            totalBytes = j.optLong("totalBytes", 0L),
+            expireAt = j.optLong("expireAt", 0L),
+            updateIntervalHours = j.optInt("updateIntervalHours", 0),
+            webPageUrl = j.optString("webPageUrl", ""),
+            supportUrl = j.optString("supportUrl", "")
         )
     }
 }

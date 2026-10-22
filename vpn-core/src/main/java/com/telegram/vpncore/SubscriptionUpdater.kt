@@ -23,7 +23,7 @@ object SubscriptionUpdater {
     private const val TAG = "SubscriptionUpdater"
 
     /** Panels rarely change faster than this; polling more often only costs battery and traffic. */
-    const val REFRESH_INTERVAL_MS = 6L * 60 * 60 * 1000
+    const val REFRESH_INTERVAL_MS = VpnSubscription.DEFAULT_REFRESH_MS
 
     /** After a failed automatic refresh, leave the subscription alone for this long. */
     const val FAILURE_BACKOFF_MS = 15L * 60 * 1000
@@ -86,7 +86,7 @@ object SubscriptionUpdater {
                 )
             }
 
-            val oldSub = subRepo.getById(sub.id) ?: sub
+            val oldSub = (subRepo.getById(sub.id) ?: sub).withInfo(parsed.info)
             val stored = configRepo.getAll().associateBy { it.id }
             val oldConfigs = oldSub.configIds.mapNotNull { stored[it] }
             val now = System.currentTimeMillis()
@@ -139,7 +139,7 @@ object SubscriptionUpdater {
                 .getOrDefault(emptyList())
             val now = System.currentTimeMillis()
             for (sub in subs) {
-                if (now - sub.lastUpdated < REFRESH_INTERVAL_MS) continue
+                if (now - sub.lastUpdated < sub.refreshIntervalMs()) continue
                 val failedAt = lastFailure[sub.id]
                 if (failedAt != null && now - failedAt < FAILURE_BACKOFF_MS) continue
                 when (val result = refresh(appContext, sub)) {

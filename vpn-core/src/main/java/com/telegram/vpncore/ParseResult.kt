@@ -30,7 +30,9 @@ data class SkippedEntry(
 /** Servers parsed from a subscription plus everything that was left out, and why. */
 data class ParseResult(
     val servers: List<VpnConfig>,
-    val skipped: List<SkippedEntry> = emptyList()
+    val skipped: List<SkippedEntry> = emptyList(),
+    /** Response-header metadata of the fetch that produced this result; null when parsed from text. */
+    val info: SubscriptionInfo? = null
 ) {
     val isEmpty: Boolean get() = servers.isEmpty() && skipped.isEmpty()
 
