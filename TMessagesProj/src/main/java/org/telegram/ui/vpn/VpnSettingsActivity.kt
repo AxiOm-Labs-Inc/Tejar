@@ -22,7 +22,8 @@ import org.telegram.messenger.AndroidUtilities
 import org.telegram.ui.ActionBar.ActionBar
 import org.telegram.ui.ActionBar.BaseFragment
 import org.telegram.ui.ActionBar.Theme
-import android.app.AlertDialog
+import org.telegram.ui.ActionBar.AlertDialog
+import org.telegram.ui.Components.EditTextBoldCursor
 
 class VpnSettingsActivity : BaseFragment() {
 
@@ -965,16 +966,25 @@ class VpnSettingsActivity : BaseFragment() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(12), dp(20), dp(4))
         }
-        val nameInput = EditText(context).apply {
-            hint = "Name (e.g. My Sub)"
-            setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText))
-            setHintTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText))
+        // Telegram's own field style so the dialog follows the app theme (day and night).
+        fun field(hintText: String) = EditTextBoldCursor(context).apply {
+            hint = hintText
+            textSize = 16f
+            setSingleLine(true)
+            setTextColor(Theme.getColor(Theme.key_dialogTextBlack))
+            setHintTextColor(Theme.getColor(Theme.key_dialogTextHint))
+            setCursorColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText4))
+            setCursorWidth(1.5f)
+            setLineColors(
+                Theme.getColor(Theme.key_windowBackgroundWhiteInputField),
+                Theme.getColor(Theme.key_windowBackgroundWhiteInputFieldActivated),
+                Theme.getColor(Theme.key_text_RedRegular)
+            )
+            background = null
+            setPadding(0, dp(8), 0, dp(8))
         }
-        val urlInput = EditText(context).apply {
-            hint = "Subscription URL"
-            setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText))
-            setHintTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText))
-        }
+        val nameInput = field("Name (e.g. My Sub)")
+        val urlInput = field("Subscription URL")
         layout.addView(nameInput)
         layout.addView(urlInput)
 
