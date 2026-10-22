@@ -6,7 +6,10 @@ import kotlinx.parcelize.Parcelize
 enum class VpnProtocol {
     VLESS, VMESS, SHADOWSOCKS, TROJAN, HYSTERIA2, NAIVE,
 
-    /** Any sing-box outbound type we have no dedicated label for; see [VpnConfig.rawType]. */
+    /**
+     * Any sing-box outbound type we have no dedicated label for (tuic, anytls, wireguard, ...);
+     * see [VpnConfig.rawType].
+     */
     OTHER
 }
 
@@ -44,6 +47,8 @@ data class VpnConfig(
     // TLS / Reality
     val security: SecurityType = SecurityType.NONE,
     val sni: String = "",
+    /** Comma-separated ALPN list for the TLS layer; empty = core default. */
+    val alpn: String = "",
     val fingerprint: String = "chrome",
 
     // Reality only
@@ -53,6 +58,9 @@ data class VpnConfig(
 
     // Shadowsocks specific
     val ssMethod: String = "aes-256-gcm",
+    /** SIP003 plugin the core implements ("obfs-local" or "v2ray-plugin"); empty = none. */
+    val ssPlugin: String = "",
+    val ssPluginOpts: String = "",
 
     // Hysteria2 specific
     val obfsPassword: String = "",  // salamander obfuscation; empty = no obfuscation

@@ -1,5 +1,6 @@
 package com.telegram.vpncore
 
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -16,6 +17,8 @@ import org.json.JSONObject
  *  - Trojan: trojan://password@host:port?sni=...#name
  *  - Hy2:    hysteria2://password@host:port?obfs=salamander&obfs-password=...&sni=...#name
  *             (hy2:// is accepted as an alias)
+ *  - TUIC, Hysteria v1, AnyTLS, WireGuard, SOCKS: translated straight into a sing-box
+ *             outbound (see [OutboundConfigs]) — they have no dedicated [VpnConfig] fields.
  *  - Naive:  https://user:password@host:port?sni=...#name  (the panel emits a plain
  *             http/https scheme, not naive+https; "naive+https://" is also accepted)
  */
@@ -37,6 +40,12 @@ object LinkParser {
             trimmed.startsWith("hy2://", ignoreCase = true) -> parseHysteria2(trimmed)
             trimmed.startsWith("naive+https://", ignoreCase = true) -> parseNaive(trimmed)
             isHttpProxyLink(trimmed) -> parseNaive(trimmed)
+            trimmed.startsWith("tuic://", ignoreCase = true) -> parseTuic(trimmed)
+            trimmed.startsWith("hysteria://", ignoreCase = true) -> parseHysteria1(trimmed)
+            trimmed.startsWith("anytls://", ignoreCase = true) -> parseAnyTls(trimmed)
+            trimmed.startsWith("wireguard://", ignoreCase = true) ||
+                trimmed.startsWith("wg://", ignoreCase = true) -> parseWireGuard(trimmed)
+            SOCKS_SCHEMES.any { trimmed.startsWith("$it://", ignoreCase = true) } -> parseSocks(trimmed)
             else -> {
                 // Only a short, scheme-shaped prefix is echoed: the rest of the link is secret.
                 val scheme = trimmed.substringBefore("://").take(16).lowercase()
@@ -45,6 +54,14 @@ object LinkParser {
             }
         }
     }
+
+    private val SOCKS_SCHEMES = listOf("socks", "socks5", "socks5h", "socks4", "socks4a")
+
+    /** True when [s] starts with a scheme [parse] handles (http/https only with credentials). */
+    fun looksLikeShareLink(s: String): Boolean =
+        listOf("vless", "vmess", "ss", "trojan", "hysteria2", "hy2", "naive+https", "tuic",
+            "hysteria", "anytls", "wireguard", "wg").plus(SOCKS_SCHEMES)
+            .any { s.startsWith("$it://", ignoreCase = true) } || isHttpProxyLink(s)
 
     // ─────────────────────────── VLESS ───────────────────────────
 
@@ -69,6 +86,11 @@ object LinkParser {
         val path = uri.queryParam("path") ?: ""
         val wsHost = uri.queryParam("host") ?: sni
         val serviceName = uri.queryParam("serviceName") ?: ""
+        // VLESS "encryption" other than none is xray's post-quantum layer; the core has no such thing.
+        uri.queryParam("encryption")?.takeIf { it.isNotBlank() && it != "none" }?.let {
+            throw UnsupportedEntryException(SkippedEntry.needsXray("vless-encryption"), xrayCapable = true)
+        }
+        val network = networkStr.toNetworkType(uri.queryParam("headerType"))
 
         return VpnConfig(
             name = name,
@@ -78,12 +100,14 @@ object LinkParser {
             uuid = uuid,
             flow = flow,
             encryption = "none",
-            network = networkStr.toNetworkType(),
+            network = network,
             path = path,
             host = wsHost,
             serviceName = serviceName,
             security = securityStr.toSecurityType(),
             sni = sni,
+            alpn = uri.queryParam("alpn") ?: "",
+            allowInsecure = uri.isInsecure(),
             fingerprint = fingerprint,
             publicKey = publicKey,
             shortId = shortId,
@@ -113,9 +137,13 @@ object LinkParser {
         val sni = json.optString("sni").ifBlank { json.optString("host") }
         val path = json.optString("path", "")
         val wsHost = json.optString("host", sni)
-        val fingerprint = json.optString("fp", "chrome")
+        val fingerprint = json.optString("fp").ifBlank { "chrome" }
         // gRPC serviceName uses "path" field; for other transports it's empty
         val serviceName = if (networkStr == "grpc") json.optString("path", "") else ""
+        // In v2rayN JSON "type" is the header type; "http" on tcp is xray's HTTP obfuscation.
+        val network = networkStr.toNetworkType(json.optString("type"))
+        val insecure = json.optString("allowInsecure").let { it == "1" || it.equals("true", true) } ||
+            json.optString("insecure").let { it == "1" || it.equals("true", true) }
 
         return VpnConfig(
             name = name,
@@ -124,13 +152,15 @@ object LinkParser {
             port = port,
             uuid = uuid,
             alterId = alterId,
-            encryption = json.optString("scy", "auto"),
-            network = networkStr.toNetworkType(),
+            encryption = json.optString("scy", "auto").ifBlank { "auto" },
+            network = network,
             path = path,
             host = wsHost,
             serviceName = serviceName,
             security = if (tls == "tls") SecurityType.TLS else SecurityType.NONE,
             sni = sni,
+            alpn = json.optString("alpn"),
+            allowInsecure = insecure,
             fingerprint = fingerprint,
             rawLink = link
         )
@@ -157,6 +187,7 @@ object LinkParser {
                 .let { it[0] to it.getOrElse(1) { "" } }
             val host = uri.host ?: throw IllegalArgumentException("SS: missing host")
             val port = uri.port.takeIf { it in 1..65535 } ?: throw IllegalArgumentException("SS: invalid port")
+            val (plugin, pluginOpts) = parseSsPlugin(uri.queryParam("plugin"))
 
             VpnConfig(
                 name = name,
@@ -165,6 +196,8 @@ object LinkParser {
                 port = port,
                 password = password,
                 ssMethod = method,
+                ssPlugin = plugin,
+                ssPluginOpts = pluginOpts,
                 rawLink = link
             )
         } else {
@@ -195,6 +228,23 @@ object LinkParser {
         }
     }
 
+    /**
+     * `plugin=name;opt=v;opt2=v2` (SIP003). The core implements only obfs-local and
+     * v2ray-plugin; a server behind any other plugin would just not answer, so it is skipped.
+     */
+    private fun parseSsPlugin(raw: String?): Pair<String, String> {
+        if (raw.isNullOrBlank()) return "" to ""
+        val name = raw.substringBefore(';')
+        val opts = raw.substringAfter(';', "")
+        return when (name) {
+            "obfs-local", "simple-obfs" -> "obfs-local" to opts
+            "v2ray-plugin" -> "v2ray-plugin" to opts
+            else -> throw UnsupportedEntryException(
+                "unsupported ss plugin ${name.take(24)}", message = "Unsupported shadowsocks plugin"
+            )
+        }
+    }
+
     // ─────────────────────────── Trojan ───────────────────────────
 
     private fun parseTrojan(link: String): VpnConfig {
@@ -218,7 +268,9 @@ object LinkParser {
             address = host,
             port = port,
             password = password,
-            network = networkStr.toNetworkType(),
+            alpn = uri.queryParam("alpn") ?: "",
+            allowInsecure = uri.isInsecure(),
+            network = networkStr.toNetworkType(uri.queryParam("headerType")),
             path = path,
             host = wsHost,
             security = secStr.toSecurityType(),
@@ -304,11 +356,153 @@ object LinkParser {
         )
     }
 
+    // ───────────── schemes translated to sing-box outbounds ─────────────
+
+    private fun csv(s: String?): List<String> =
+        s.orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }
+
+    /** The `tls` object shared by tuic / hysteria / anytls links. */
+    private fun tlsBlock(uri: ParsedLink, sni: String?, defaultAlpn: List<String> = emptyList()): JSONObject =
+        JSONObject().apply {
+            put("enabled", true)
+            if (!sni.isNullOrBlank()) put("server_name", sni)
+            val alpn = csv(uri.queryParam("alpn")).ifEmpty { defaultAlpn }
+            if (alpn.isNotEmpty()) put("alpn", JSONArray(alpn))
+            if (uri.isInsecure()) put("insecure", true)
+        }
+
+    private fun outboundConfig(type: String, uri: ParsedLink, host: String, port: Int, link: String, build: JSONObject.() -> Unit): VpnConfig {
+        val outbound = JSONObject().apply {
+            put("type", type)
+            put("tag", "proxy")
+            put("server", host)
+            put("server_port", port)
+            build()
+        }
+        return OutboundConfigs.fromOutbound(outbound, uri.fragment.orEmpty(), rawLink = link)
+    }
+
+    private fun parseTuic(link: String): VpnConfig {
+        // tuic://UUID:PASSWORD@host:port?congestion_control=bbr&udp_relay_mode=native&alpn=h3&sni=...#name
+        val uri = ParsedLink.parse(link)
+        val userInfo = uri.userInfo ?: throw IllegalArgumentException("TUIC: missing credentials")
+        val uuid = userInfo.substringBefore(':')
+        val password = userInfo.substringAfter(':', "")
+        if (uuid.isBlank() || password.isEmpty()) throw IllegalArgumentException("TUIC: needs uuid and password")
+        val host = uri.host ?: throw IllegalArgumentException("TUIC: missing host")
+        val port = uri.port.takeIf { it in 1..65535 } ?: throw IllegalArgumentException("TUIC: invalid port")
+        return outboundConfig("tuic", uri, host, port, link) {
+            put("uuid", uuid)
+            put("password", password)
+            uri.queryParam("congestion_control")?.takeIf { it.isNotBlank() }?.let { put("congestion_control", it) }
+            uri.queryParam("udp_relay_mode")?.takeIf { it.isNotBlank() }?.let { put("udp_relay_mode", it) }
+            put("tls", tlsBlock(uri, uri.queryParam("sni"), listOf("h3")))
+        }
+    }
+
+    private fun parseHysteria1(link: String): VpnConfig {
+        // hysteria://host:port?auth=...&peer=sni&insecure=1&upmbps=50&downmbps=100&alpn=h3&obfs=xplus&obfsParam=...
+        val uri = ParsedLink.parse(link)
+        val host = uri.host ?: throw IllegalArgumentException("Hysteria: missing host")
+        val port = uri.port.takeIf { it in 1..65535 } ?: throw IllegalArgumentException("Hysteria: invalid port")
+        val protocol = uri.queryParam("protocol")
+        if (!protocol.isNullOrBlank() && !protocol.equals("udp", ignoreCase = true)) {
+            throw UnsupportedEntryException("unsupported hysteria protocol ${protocol.take(16)}")
+        }
+        return outboundConfig("hysteria", uri, host, port, link) {
+            val authStr = uri.queryParam("auth_str") ?: uri.queryParam("auth-str") ?: uri.queryParam("authstr")
+                ?: uri.userInfo
+            if (authStr != null) put("auth_str", authStr)
+            else uri.queryParam("auth")?.let { put("auth_str", it) }
+            // The core insists on a bandwidth for the congestion controller; links often omit it.
+            put("up_mbps", uri.queryParam("upmbps")?.toIntOrNull()?.takeIf { it > 0 } ?: 100)
+            put("down_mbps", uri.queryParam("downmbps")?.toIntOrNull()?.takeIf { it > 0 } ?: 100)
+            val obfs = uri.queryParam("obfsParam") ?: uri.queryParam("obfs")
+            if (!obfs.isNullOrBlank() && !obfs.equals("none", true)) put("obfs", obfs)
+            put("tls", tlsBlock(uri, uri.queryParam("peer") ?: uri.queryParam("sni"), listOf("h3")))
+        }
+    }
+
+    private fun parseAnyTls(link: String): VpnConfig {
+        // anytls://PASSWORD@host:port?sni=...&insecure=1&alpn=...#name
+        val uri = ParsedLink.parse(link)
+        val password = uri.userInfo ?: throw IllegalArgumentException("AnyTLS: missing password")
+        val host = uri.host ?: throw IllegalArgumentException("AnyTLS: missing host")
+        val port = uri.port.takeIf { it in 1..65535 } ?: 443
+        return outboundConfig("anytls", uri, host, port, link) {
+            put("password", password)
+            put("tls", tlsBlock(uri, uri.queryParam("sni")).apply {
+                uri.queryParam("fp")?.takeIf { it.isNotBlank() }?.let {
+                    put("utls", JSONObject().put("enabled", true).put("fingerprint", it))
+                }
+            })
+        }
+    }
+
+    /**
+     * WireGuard links are not standardised; the common shape is
+     * `wireguard://PRIVATE_KEY@host:port?publickey=..&address=10.0.0.2/32&reserved=1,2,3&mtu=1280#name`.
+     * Since sing-box 1.13 WireGuard is an *endpoint*, not an outbound; the generator places it
+     * accordingly (see SingBoxConfigGenerator), so the JSON here is the endpoint object.
+     */
+    private fun parseWireGuard(link: String): VpnConfig {
+        val uri = ParsedLink.parse(link)
+        val privateKey = (uri.userInfo ?: uri.queryParam("privatekey") ?: uri.queryParam("private_key"))
+            ?.takeIf { it.isNotBlank() } ?: throw IllegalArgumentException("WireGuard: missing private key")
+        val host = uri.host ?: throw IllegalArgumentException("WireGuard: missing host")
+        val port = uri.port.takeIf { it in 1..65535 } ?: throw IllegalArgumentException("WireGuard: invalid port")
+        fun q(vararg names: String) = names.firstNotNullOfOrNull { uri.queryParam(it)?.takeIf { v -> v.isNotBlank() } }
+        val publicKey = q("publickey", "public_key", "peer_public_key", "pbk")
+            ?: throw IllegalArgumentException("WireGuard: missing peer public key")
+        val addresses = csv(q("address", "ip", "local_address")).map {
+            if (it.contains('/')) it else if (it.contains(':')) "$it/128" else "$it/32"
+        }
+        if (addresses.isEmpty()) throw IllegalArgumentException("WireGuard: missing interface address")
+        val reserved = csv(q("reserved")).map { it.toIntOrNull() ?: throw IllegalArgumentException("WireGuard: bad reserved") }
+        if (reserved.isNotEmpty() && reserved.size != 3) throw IllegalArgumentException("WireGuard: bad reserved")
+
+        val endpoint = JSONObject().apply {
+            put("type", "wireguard")
+            put("tag", "proxy")
+            put("address", JSONArray(addresses))
+            put("private_key", privateKey)
+            q("mtu")?.toIntOrNull()?.let { put("mtu", it) }
+            put("peers", JSONArray().put(JSONObject().apply {
+                put("address", host)
+                put("port", port)
+                put("public_key", publicKey)
+                q("presharedkey", "preshared_key", "pre_shared_key", "psk")?.let { put("pre_shared_key", it) }
+                put("allowed_ips", JSONArray(csv(q("allowedips", "allowed_ips")).ifEmpty { listOf("0.0.0.0/0", "::/0") }))
+                if (reserved.isNotEmpty()) put("reserved", JSONArray(reserved))
+            }))
+        }
+        return OutboundConfigs.fromOutbound(endpoint, uri.fragment.orEmpty(), rawLink = link)
+    }
+
+    private fun parseSocks(link: String): VpnConfig {
+        // socks5://user:pass@host:port#name, or socks://BASE64(user:pass)@host:port#name
+        val uri = ParsedLink.parse(link)
+        val host = uri.host ?: throw IllegalArgumentException("SOCKS: missing host")
+        val port = uri.port.takeIf { it in 1..65535 } ?: throw IllegalArgumentException("SOCKS: invalid port")
+        val raw = uri.userInfo.orEmpty()
+        val credentials = if (raw.contains(':')) raw
+        else LenientBase64.decodeToString(raw)?.takeIf { it.contains(':') } ?: raw
+        val version = if (uri.scheme.lowercase().startsWith("socks4")) "4" else "5"
+        return outboundConfig("socks", uri, host, port, link) {
+            put("version", version)
+            if (credentials.isNotEmpty()) {
+                put("username", credentials.substringBefore(':'))
+                credentials.substringAfter(':', "").takeIf { it.isNotEmpty() }?.let { put("password", it) }
+            }
+        }
+    }
+
     // ───────────────────────── Helpers ────────────────────────────
 
     /** True only when the link explicitly asks to skip certificate validation. */
     private fun ParsedLink.isInsecure(): Boolean {
-        val raw = queryParam("insecure") ?: queryParam("allowInsecure") ?: return false
+        val raw = queryParam("insecure") ?: queryParam("allowInsecure") ?: queryParam("allow_insecure")
+            ?: return false
         return raw == "1" || raw.equals("true", ignoreCase = true)
     }
 
@@ -317,8 +511,14 @@ object LinkParser {
      * through to plain TCP, producing a server that connects to nothing; now it is reported as
      * something only xray can serve.
      */
-    private fun String.toNetworkType(): NetworkType = when (val t = lowercase()) {
-        "", "tcp", "raw", "none" -> NetworkType.TCP
+    private fun String.toNetworkType(headerType: String? = null): NetworkType = when (val t = lowercase()) {
+        "", "tcp", "raw", "none" ->
+            // tcp + HTTP header obfuscation is an xray feature; plain tcp would just fail.
+            if (headerType.equals("http", ignoreCase = true)) {
+                throw UnsupportedEntryException(
+                    SkippedEntry.needsXray("tcp-http"), xrayCapable = true, message = "Unsupported transport: tcp-http"
+                )
+            } else NetworkType.TCP
         "ws" -> NetworkType.WS
         "grpc" -> NetworkType.GRPC
         "h2", "http" -> NetworkType.H2

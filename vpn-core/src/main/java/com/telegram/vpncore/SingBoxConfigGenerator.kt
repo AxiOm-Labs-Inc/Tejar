@@ -79,7 +79,7 @@ object SingBoxConfigGenerator {
                 // connections still pinned to the previous one.
                 put("interrupt_exist_connections", true)
             })
-            usable.forEach { server ->
+            usable.filterNot(::isEndpoint).forEach { server ->
                 val (outbound, links) = buildServerOutbounds(server)
                 put(outbound)
                 links.forEach { put(it) }
@@ -89,6 +89,16 @@ object SingBoxConfigGenerator {
                 put("tag", "direct")
             })
         })
+
+        // ── endpoints ────────────────────────────────────────────
+        // WireGuard stopped being an outbound in sing-box 1.13; it is an endpoint, which the
+        // selector can still pick by tag like any outbound.
+        val endpoints = usable.filter(::isEndpoint)
+        if (endpoints.isNotEmpty()) {
+            root.put("endpoints", JSONArray().apply {
+                endpoints.forEach { put(buildProxyOutbound(it, it.id)) }
+            })
+        }
 
         // ── route ────────────────────────────────────────────────
         // Private ranges are listed explicitly: there is no geoip database in the APK,
@@ -141,6 +151,10 @@ object SingBoxConfigGenerator {
     }
 
     // ─────────────────────────────────────────────────────────────
+
+    /** WireGuard configs carry an endpoint object (peers, address) in [VpnConfig.rawOutbound]. */
+    private fun isEndpoint(config: VpnConfig): Boolean =
+        config.rawOutbound.isNotBlank() && config.rawType == "wireguard"
 
     /** True when this server's own outbound dials through a `detour` (a ShadowTLS chain). */
     private fun dialsThroughChain(config: VpnConfig): Boolean {
@@ -217,6 +231,10 @@ object SingBoxConfigGenerator {
             VpnProtocol.SHADOWSOCKS -> {
                 outbound.put("method", config.ssMethod)
                 outbound.put("password", config.password)
+                if (config.ssPlugin.isNotBlank()) {
+                    outbound.put("plugin", config.ssPlugin)
+                    if (config.ssPluginOpts.isNotBlank()) outbound.put("plugin_opts", config.ssPluginOpts)
+                }
             }
             VpnProtocol.HYSTERIA2 -> {
                 outbound.put("password", config.password)
@@ -257,6 +275,11 @@ object SingBoxConfigGenerator {
             val serverName = config.sni.ifBlank { config.host.ifBlank { config.address } }
             if (serverName.isNotBlank()) put("server_name", serverName)
             if (config.allowInsecure) put("insecure", true)
+            if (config.alpn.isNotBlank()) {
+                put("alpn", JSONArray().apply {
+                    config.alpn.split(',').map { it.trim() }.filter { it.isNotEmpty() }.forEach { put(it) }
+                })
+            }
 
             if (config.security == SecurityType.REALITY) {
                 put("reality", JSONObject().apply {
