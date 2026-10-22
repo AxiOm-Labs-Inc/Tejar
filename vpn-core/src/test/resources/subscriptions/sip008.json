@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "servers": [
+    {"id": "1", "remarks": "SIP008 plain", "server": "s1.example.com", "server_port": 8388, "password": "pass123", "method": "aes-256-gcm"},
+    {"id": "2", "remarks": "SIP008 obfs 🚀", "server": "s2.example.com", "server_port": 443, "password": "pass123", "method": "chacha20-ietf-poly1305", "plugin": "obfs-local", "plugin_opts": "obfs=tls;obfs-host=bing.com"},
+    {"id": "3", "remarks": "SIP008 kcptun", "server": "s3.example.com", "server_port": 443, "password": "pass123", "method": "aes-256-gcm", "plugin": "kcptun"},
+    {"id": "4", "remarks": "SIP008 bad", "server": "s4.example.com", "password": "pass123", "method": "aes-256-gcm"}
+  ],
+  "bytes_used": 0
+}

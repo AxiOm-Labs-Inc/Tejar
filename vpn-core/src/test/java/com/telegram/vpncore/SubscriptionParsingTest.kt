@@ -89,9 +89,17 @@ class SubscriptionParsingTest {
 
     @Test fun htmlPageLinks() {
         val r = parse("page.html")
-        assertEquals(listOf("Page node", "Page trojan", "Page ss", "VMess WS 🚀"), r.servers.map { it.name })
+        assertEquals(listOf("Page node", "Page trojan", "Page ss", "VMess WS 🚀", "Page tuic"), r.servers.map { it.name })
         assertEquals(mapOf("needs xray: xhttp" to 1), r.skipCounts)
-        assertEquals(NetworkType.WS, r.servers[0].network)
+        // Query separators arrive as &amp; and used to cut the link at the first parameter.
+        val node = r.servers[0]
+        assertEquals(NetworkType.WS, node.network)
+        assertEquals("/p", node.path)
+        assertEquals(SecurityType.TLS, node.security)
+        assertEquals("h1.example.com", node.sni)
+        assertEquals("tuic", r.servers[4].rawType)
+        // wss:// in running text is not an ss:// link.
+        assertEquals(5, r.servers.size)
     }
 
     @Test fun singBoxJsonFromMarzban() {

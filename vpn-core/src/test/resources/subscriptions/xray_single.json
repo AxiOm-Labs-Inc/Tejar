@@ -1,0 +1,14 @@
+{
+  "log": {"loglevel": "warning"},
+  "inbounds": [{"tag": "in", "port": 10808, "protocol": "socks"}],
+  "outbounds": [
+    {"tag": "proxy", "protocol": "vless",
+     "settings": {"vnext": [{"address": "one.example.com", "port": 8443,
+       "users": [{"id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "encryption": "none"}]}]},
+     "streamSettings": {"network": "ws", "security": "tls", "tlsSettings": {"serverName": "one.example.com"},
+       "wsSettings": {"path": "/ws", "headers": {"Host": "one.example.com"}}},
+     "mux": {"enabled": false}},
+    {"tag": "direct", "protocol": "freedom"},
+    {"tag": "block", "protocol": "blackhole"}
+  ]
+}

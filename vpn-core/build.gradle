@@ -61,6 +61,9 @@ dependencies {
     // Coroutines
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3"
 
+    // Clash / Mihomo YAML subscriptions (parsed with SafeConstructor only)
+    implementation "org.yaml:snakeyaml:2.7"
+
     // Core
     implementation "androidx.core:core-ktx:1.13.1"
 
