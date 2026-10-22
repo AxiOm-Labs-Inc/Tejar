@@ -34,6 +34,16 @@ dependencies {
 }
 
 android {
+    // vpn-core ships xray as libxray.so and runs it as a program, so it must exist as a real file
+    // in nativeLibraryDir (APKs/AABs on API 23+ otherwise map native libs straight from the
+    // archive) and must keep its symbols (stripping a Go binary gains nothing).
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+            keepDebugSymbols += '**/libxray.so'
+        }
+    }
+
     compileSdkVersion 35
     buildToolsVersion '35.0.0'
 

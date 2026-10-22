@@ -52,6 +52,39 @@ object OutboundConfigs {
         )
     }
 
+    /**
+     * A server run by the bundled xray process: [outbound] is an xray outbound object. sing-box
+     * only ever sees it as a local SOCKS outbound (see [SingBoxConfigGenerator]).
+     * Without [stableIds] the id is derived from the content, so the same entry keeps its id
+     * across refreshes (links get random ids elsewhere, but xray servers key a process config).
+     */
+    fun xrayServer(
+        outbound: JSONObject,
+        name: String,
+        rawLink: String = "",
+        stableIds: MutableSet<String>? = null
+    ): VpnConfig {
+        val (server, port) = XrayOutbounds.endpointOf(outbound)
+        val displayName = name.ifBlank { "$server:$port" }
+        val id = if (stableIds != null) stableId("xray", displayName, server, port, stableIds)
+        else "xr-" + MessageDigest.getInstance("SHA-256")
+            .digest("$displayName|$server|$port|$outbound".toByteArray(Charsets.UTF_8))
+            .take(8).joinToString("") { "%02x".format(it) }
+        return VpnConfig(
+            id = id,
+            name = displayName,
+            protocol = VpnProtocol.OTHER,
+            address = server,
+            port = port,
+            rawLink = rawLink,
+            rawOutbound = outbound.toString(),
+            rawType = XRAY_TYPE
+        )
+    }
+
+    /** [VpnConfig.rawType] of servers run by xray. */
+    const val XRAY_TYPE = "xray"
+
     fun stableId(type: String, tag: String, server: String, port: Int, usedIds: MutableSet<String>): String {
         val digest = MessageDigest.getInstance("SHA-256")
             .digest("$type|$tag|$server|$port".toByteArray(Charsets.UTF_8))

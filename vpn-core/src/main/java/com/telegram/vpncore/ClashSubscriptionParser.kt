@@ -39,6 +39,18 @@ object ClashSubscriptionParser {
                 val outbound = toOutbound(proxy)
                 results.add(OutboundConfigs.fromOutbound(outbound, name, stableIds = usedIds))
             } catch (e: UnsupportedEntryException) {
+                if (e.xrayCapable) {
+                    // xhttp / HTTP-header obfuscation: run it in the bundled xray process.
+                    val server = runCatching {
+                        OutboundConfigs.xrayServer(
+                            XrayOutbounds.fromClash(JSONObject(toJson(proxy).toString())), name, stableIds = usedIds
+                        )
+                    }.getOrNull()
+                    if (server != null) {
+                        results.add(server)
+                        continue
+                    }
+                }
                 Log.w(TAG, "Skipping Clash proxy: ${e.reason}")
                 skipped.add(
                     SkippedEntry(

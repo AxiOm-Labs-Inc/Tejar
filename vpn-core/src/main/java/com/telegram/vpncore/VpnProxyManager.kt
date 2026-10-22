@@ -111,6 +111,16 @@ class VpnProxyManager private constructor(private val context: Context) {
     @Volatile
     private var pauseRequested = false
 
+    // ── xray (second core, separate process) ──
+    // Servers sing-box cannot speak (xhttp, mKCP, ...) run in one xray child process; each is
+    // reached by sing-box over its own local SOCKS inbound. All of this is guarded by [mutex].
+    private val xray = XrayProcess(context) { code -> onXrayExited(code) }
+    @Volatile
+    private var xrayEndpoints: Map<String, XrayEndpoint> = emptyMap()
+    private var xraySignature = ""
+    private var xrayRunning: List<VpnConfig> = emptyList()
+    private var xrayRestarts = 0
+
     @Volatile
     private var coreSetupDone = false
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -220,8 +230,10 @@ class VpnProxyManager private constructor(private val context: Context) {
                 Log.w(TAG, "reloadServers: no servers left, keeping the running core as is")
                 return
             }
+            // A changed xray server set means a new process (and new ports) first.
+            ensureXray(stored)
             cachedJsonConfig = SingBoxConfigGenerator.generate(
-                stored, config.id, LOCAL_PORT, socksUsername, socksPassword
+                stored, config.id, LOCAL_PORT, socksUsername, socksPassword, xrayEndpoints
             )
             // Reuses the warm-reload path, which already falls back to a full start. Calling
             // it while Connected is safe: startForeground and startWatchdog are both
@@ -313,6 +325,7 @@ class VpnProxyManager private constructor(private val context: Context) {
             cachedJsonConfig = null
             commandClient.disconnect()
             stopForegroundService()
+            stopXray() // after the core: it is the core's upstream
             _state.emit(ProxyState.Idle)
             Log.d(TAG, "Proxy stopped")
         } catch (e: Exception) {
@@ -342,6 +355,7 @@ class VpnProxyManager private constructor(private val context: Context) {
             }
             commandServer = null
             stopForegroundService()
+            stopXray()
             lastConnectedConfig = config
             _state.emit(ProxyState.Paused(config))
             Log.d(TAG, "Proxy paused during connect (Energy Saving)")
@@ -356,6 +370,14 @@ class VpnProxyManager private constructor(private val context: Context) {
             commandClient.disconnect()
             runCatching { commandServer?.closeService() }
             stopForegroundService()
+            if (xray.isAlive) {
+                // xray's ports die with the process and are new on the next start, so the warm
+                // command server and its cached config would point at nothing: resume cold.
+                runCatching { commandServer?.close() }
+                commandServer = null
+                cachedJsonConfig = null
+                stopXray()
+            }
             lastConnectedConfig = config
             _state.emit(ProxyState.Paused(config))
             Log.d(TAG, "Proxy paused (Energy Saving)")
@@ -374,6 +396,7 @@ class VpnProxyManager private constructor(private val context: Context) {
         lastConnectedConfig = config
         try {
             val servers = allServersIncluding(config)
+            ensureXray(servers) // before the core: its config points at xray's ports
             val jsonConfig = generateValidatedConfig(servers, config)
             cachedJsonConfig = jsonConfig
             startCore(jsonConfig, config)
@@ -395,6 +418,7 @@ class VpnProxyManager private constructor(private val context: Context) {
             }
             Log.e(TAG, "Failed to start proxy", e)
             cachedJsonConfig = null
+            stopXray()
             _state.emit(ProxyState.Error(e.message ?: "Unknown error"))
             if (autoReconnect) {
                 lastConnectedConfig = config
@@ -537,7 +561,67 @@ class VpnProxyManager private constructor(private val context: Context) {
     // ───────────────────────── sing-box ──────────────────────────
 
     /** Per-server check against the core, used to drop servers it would refuse to load. */
-    fun serverValidator(): ServerValidator = LibboxServerValidator { ensureCoreSetup() }
+    fun serverValidator(): ServerValidator =
+        LibboxServerValidator({ ensureCoreSetup() }, { XrayProcess.check(context, it) })
+
+    // ── xray process lifecycle ──
+
+    /** Makes the xray process match the xray servers in [servers]: start, restart or stop. */
+    private fun ensureXray(servers: List<VpnConfig>) {
+        val xrayServers = servers.filter(XrayConfigBuilder::isXray)
+        if (xrayServers.isEmpty()) {
+            stopXray()
+            return
+        }
+        val signature = XrayConfigBuilder.signature(xrayServers)
+        if (signature == xraySignature && xray.isAlive) return
+        xray.stop()
+        xrayEndpoints = emptyMap()
+        xrayRestarts = 0
+        try {
+            val assigned = XrayProcess.assignEndpoints(xrayServers)
+            val ready = xray.start(xrayServers, assigned)
+            xrayEndpoints = assigned.filterKeys { it in ready }
+            xrayRunning = xrayServers
+            xraySignature = signature
+        } catch (e: Exception) {
+            // The tunnel still starts; xray servers are simply absent from the core config.
+            Log.w(TAG, "xray did not start: ${e.message}")
+            xray.stop()
+            xraySignature = ""
+        }
+    }
+
+    private fun stopXray() {
+        xray.stop()
+        xrayEndpoints = emptyMap()
+        xrayRunning = emptyList()
+        xraySignature = ""
+    }
+
+    /**
+     * xray died on its own. Once per session it is brought back on the same ports and
+     * credentials, so the running core keeps working without a reload. If it keeps dying the
+     * core stays up: xray servers then fail their latency test and auto-select moves away.
+     */
+    private fun onXrayExited(code: Int) {
+        scope.launch {
+            mutex.withLock {
+                if (_state.value !is ProxyState.Connected || xrayRunning.isEmpty()) return@withLock
+                if (xrayRestarts >= 1) {
+                    Log.w(TAG, "xray died again (code $code); leaving it down")
+                    return@withLock
+                }
+                xrayRestarts++
+                Log.w(TAG, "xray died (code $code); restarting once")
+                try {
+                    xray.start(xrayRunning, xrayEndpoints)
+                } catch (e: Exception) {
+                    Log.w(TAG, "xray restart failed: ${e.message}")
+                }
+            }
+        }
+    }
 
     /**
      * Builds the config for [servers], making sure the core accepts it.
@@ -551,7 +635,7 @@ class VpnProxyManager private constructor(private val context: Context) {
     private fun generateValidatedConfig(servers: List<VpnConfig>, selected: VpnConfig): String {
         ensureCoreSetup()
         val json = SingBoxConfigGenerator.generate(
-            servers, selected.id, LOCAL_PORT, socksUsername, socksPassword
+            servers, selected.id, LOCAL_PORT, socksUsername, socksPassword, xrayEndpoints
         )
         try {
             Libbox.checkConfig(json)
@@ -564,7 +648,7 @@ class VpnProxyManager private constructor(private val context: Context) {
         val outcome = validator.filter(servers)
         Log.w(TAG, "Starting without ${outcome.rejected.size} server(s) the core rejected")
         val retry = SingBoxConfigGenerator.generate(
-            outcome.valid, selected.id, LOCAL_PORT, socksUsername, socksPassword
+            outcome.valid, selected.id, LOCAL_PORT, socksUsername, socksPassword, xrayEndpoints
         )
         Libbox.checkConfig(retry)
         return retry

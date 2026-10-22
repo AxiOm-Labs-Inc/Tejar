@@ -20,12 +20,10 @@ class FormatsTest {
 
     @Test fun clashMixedProfile() {
         val r = parse("clash.yaml")
-        assertEquals(15, r.servers.size)
+        assertEquals(17, r.servers.size)
         assertEquals(
             mapOf(
                 "unsupported ss plugin kcptun" to 1,
-                "needs xray: xhttp" to 1,
-                "needs xray: tcp-http" to 1,
                 "unsupported type ssr" to 1
             ),
             r.skipCounts
@@ -62,8 +60,13 @@ class FormatsTest {
         val h2 = r.ob("VLESS H2").getJSONObject("transport")
         assertEquals("http", h2.getString("type"))
         assertEquals("/h2", h2.getString("path"))
-        // Clash "http" network is HTTP header obfuscation over TCP, which only xray speaks.
-        assertFalse(r.servers.any { it.name == "VLESS HTTP" })
+        // Clash "http" network is HTTP header obfuscation over TCP, which only xray speaks:
+        // it runs in the xray process, as a tcp stream with an http header.
+        val http = JSONObject(r.servers.first { it.name == "VLESS HTTP" }.rawOutbound)
+        assertEquals("xray", r.servers.first { it.name == "VLESS HTTP" }.rawType)
+        val tcp = http.getJSONObject("streamSettings").getJSONObject("tcpSettings").getJSONObject("header")
+        assertEquals("http", tcp.getString("type"))
+        assertEquals("/a", tcp.getJSONObject("request").getJSONArray("path").getString(0))
 
         val trojan = r.ob("Trojan WS")
         assertEquals("httpupgrade", trojan.getJSONObject("transport").getString("type"))
@@ -96,14 +99,15 @@ class FormatsTest {
         assertEquals("root", r.ob("SSH").getString("user"))
     }
 
-    @Test fun clashXhttpEntryIsKeptForXray() {
-        val xray = parse("clash.yaml").xrayCapable
-        assertEquals(setOf("VLESS XHTTP", "VLESS HTTP"), xray.map { it.name }.toSet())
-        assertTrue(xray.all { it.source == SkipSource.CLASH_PROXY })
-        val e = xray.first { it.name == "VLESS XHTTP" }
-        assertEquals(SkipSource.CLASH_PROXY, e.source)
-        assertEquals("VLESS XHTTP", e.name)
-        assertEquals("xhttp", JSONObject(e.raw).getString("network"))
+    @Test fun clashXhttpEntryRunsInXray() {
+        val r = parse("clash.yaml")
+        val s = r.servers.first { it.name == "VLESS XHTTP" }
+        assertEquals("xray", s.rawType)
+        val o = JSONObject(s.rawOutbound)
+        assertEquals("vless", o.getString("protocol"))
+        assertEquals("xhttp", o.getJSONObject("streamSettings").getString("network"))
+        assertEquals("xh.example.com", s.address)
+        assertTrue(r.xrayCapable.isEmpty())
     }
 
     @Test fun clashIdsAreStableAcrossParses() {
@@ -126,7 +130,7 @@ class FormatsTest {
     @Test fun xrayArrayRemnawaveStyle() {
         val r = parse("xray_array.json")
         assertEquals(
-            listOf("🇩🇪 DE Reality", "NL VMess WS", "FI Trojan gRPC", "SE SS", "PL HTTPUpgrade"),
+            listOf("🇩🇪 DE Reality", "NL VMess WS", "FI Trojan gRPC", "SE SS", "PL HTTPUpgrade", "FR XHTTP", "AT mKCP"),
             r.servers.map { it.name }
         )
         val de = r.ob("🇩🇪 DE Reality")
@@ -146,15 +150,24 @@ class FormatsTest {
         assertEquals("/up", r.ob("PL HTTPUpgrade").getJSONObject("transport").getString("path"))
     }
 
-    @Test fun xrayXhttpAndKcpAreKeptForStageE() {
+    @Test fun xrayXhttpAndKcpRunInXrayAsIs() {
         val r = parse("xray_array.json")
-        assertEquals(mapOf("needs xray: xhttp" to 1, "needs xray: kcp" to 1), r.skipCounts)
-        val x = r.xrayCapable.first { it.name == "FR XHTTP" }
-        assertEquals(SkipSource.XRAY_OUTBOUND, x.source)
-        val original = JSONObject(x.raw)
-        assertEquals("vless", original.getString("protocol"))
-        assertEquals("/x", original.getJSONObject("streamSettings").getJSONObject("xhttpSettings").getString("path"))
-        assertEquals(2, r.xrayCapable.size)
+        assertTrue(r.skipped.isEmpty())
+        val x = JSONObject(r.servers.first { it.name == "FR XHTTP" }.rawOutbound)
+        assertEquals("vless", x.getString("protocol"))
+        assertEquals("/x", x.getJSONObject("streamSettings").getJSONObject("xhttpSettings").getString("path"))
+        assertFalse(x.has("tag")) // the process config assigns its own tags
+        assertEquals("kcp", JSONObject(r.servers.first { it.name == "AT mKCP" }.rawOutbound)
+            .getJSONObject("streamSettings").getString("network"))
+        assertEquals(setOf("FR XHTTP", "AT mKCP"), r.servers.filter { it.rawType == "xray" }.map { it.name }.toSet())
+    }
+
+    @Test fun xrayDialerProxyChainIsSkippedNotSentDirect() {
+        val text = """{"outbounds":[{"tag":"a","protocol":"vless","settings":{"vnext":[{"address":"a.example.com","port":443,"users":[{"id":"u"}]}]},
+          "streamSettings":{"network":"tcp","sockopt":{"dialerProxy":"other"}}}]}"""
+        val r = SubscriptionFetcher.parseSubscription(text)
+        assertTrue(r.servers.isEmpty())
+        assertEquals(mapOf("unsupported dialerProxy chain" to 1), r.skipCounts)
     }
 
     @Test fun singleXrayConfig() {
@@ -181,8 +194,9 @@ class FormatsTest {
           {"tag":"b","protocol":"vless","settings":{"vnext":[{"address":"b.example.com","port":443,"users":[{"id":"u","encryption":"mlkem768x25519plus.native.0rtt.k"}]}]}}
         ]}"""
         val r = SubscriptionFetcher.parseSubscription(text)
-        assertTrue(r.servers.isEmpty())
-        assertEquals(mapOf("needs xray: tcp-http" to 1, "needs xray: vless-encryption" to 1), r.skipCounts)
+        assertEquals(2, r.servers.size)
+        assertTrue(r.servers.all { it.rawType == "xray" })
+        assertTrue(r.skipped.isEmpty())
     }
 
     // ───────────────────────── SIP008 / Outline ─────────────────────────

@@ -4,6 +4,76 @@ plugins {
     id 'kotlin-parcelize'
 }
 
+import java.security.MessageDigest
+import java.util.zip.ZipFile
+
+// ── Xray-core, shipped as an executable child process ────────────────────────────────────
+// libbox and libv2ray are both gomobile builds with go/Seq, so xray cannot be linked in; the
+// upstream release binary is bundled as jniLibs/<abi>/libxray.so instead (that is the only way
+// an executable ends up in nativeLibraryDir). Downloaded at build time, never committed.
+// MPL-2.0, see TEJAR.md. To update: change the version and take the digests from the release's
+// *.zip.dgst files (SHA2-256).
+def xrayVersion = 'v26.3.27'
+def xrayAssets = [
+        'arm64-v8a'  : [zip: 'Xray-android-arm64-v8a.zip', sha256: '57149ffd48b629c07bf76938e73ab2729fde5910091497eab3e93d1c190f4c1b'],
+        // upstream has no android arm32 build; the static linux one runs fine on Android
+        'armeabi-v7a': [zip: 'Xray-linux-arm32-v7a.zip', sha256: 'c7265ae13c63ca0241a037df4ef960ad37938c8a67d984cc08834b2cfdf5654b'],
+]
+def xrayCache = new File(gradle.gradleUserHomeDir, "tejar-xray/${xrayVersion}")
+def xrayJniDir = layout.buildDirectory.dir('xray-jniLibs').get().asFile
+
+def sha256Of = { File f ->
+    def md = MessageDigest.getInstance('SHA-256')
+    f.withInputStream { is ->
+        byte[] buf = new byte[65536]
+        int n
+        while ((n = is.read(buf)) > 0) md.update(buf, 0, n)
+    }
+    md.digest().collect { String.format('%02x', it) }.join()
+}
+
+tasks.register('prepareXray') {
+    inputs.property('version', xrayVersion)
+    inputs.property('assets', xrayAssets.toString())
+    outputs.dir(xrayJniDir)
+    doLast {
+        xrayCache.mkdirs()
+        xrayAssets.each { abi, asset ->
+            def zip = new File(xrayCache, asset.zip)
+            // A cached download is trusted only if it still matches the pinned digest.
+            if (zip.exists() && sha256Of(zip) != asset.sha256) zip.delete()
+            if (!zip.exists()) {
+                def url = "https://github.com/XTLS/Xray-core/releases/download/${xrayVersion}/${asset.zip}"
+                def tmp = new File(xrayCache, asset.zip + '.part')
+                int attempt = 0
+                while (true) {
+                    try {
+                        logger.lifecycle("Downloading ${url}")
+                        new URL(url).openStream().withCloseable { is -> tmp.withOutputStream { os -> os << is } }
+                        break
+                    } catch (IOException e) {
+                        if (++attempt >= 3) throw new GradleException("Cannot download ${url}: ${e.message}")
+                    }
+                }
+                def actual = sha256Of(tmp)
+                if (actual != asset.sha256) {
+                    tmp.delete()
+                    throw new GradleException("SHA-256 mismatch for ${asset.zip}: expected ${asset.sha256}, got ${actual}")
+                }
+                tmp.renameTo(zip)
+            }
+            def out = new File(xrayJniDir, "${abi}/libxray.so")
+            out.parentFile.mkdirs()
+            new ZipFile(zip).withCloseable { z ->
+                def entry = z.getEntry('xray')
+                if (entry == null) throw new GradleException("No 'xray' in ${asset.zip}")
+                z.getInputStream(entry).withCloseable { is -> out.withOutputStream { os -> os << is } }
+            }
+            out.setExecutable(true, false)
+        }
+    }
+}
+
 repositories {
     maven { url 'https://maven.aliyun.com/repository/public' }
     maven { url 'https://maven.aliyun.com/repository/google' }
@@ -26,6 +96,10 @@ android {
         ndk {
             abiFilters "arm64-v8a", "armeabi-v7a", "x86", "x86_64"
         }
+    }
+
+    sourceSets {
+        main.jniLibs.srcDir xrayJniDir
     }
 
     compileOptions {
@@ -73,4 +147,9 @@ dependencies {
     // Pure-JVM unit tests. Android's org.json is a stub there, so bring the real one.
     testImplementation "junit:junit:4.13.2"
     testImplementation "org.json:json:20231013"
+}
+
+// Only packaging needs the binary; compiling and unit tests stay offline-friendly.
+tasks.configureEach { task ->
+    if (task.name ==~ /(merge|copy).*(JniLibFolders|JniLibsProjectOnly)/) task.dependsOn 'prepareXray'
 }
