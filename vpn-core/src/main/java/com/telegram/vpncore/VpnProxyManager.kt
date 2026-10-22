@@ -374,9 +374,7 @@ class VpnProxyManager private constructor(private val context: Context) {
         lastConnectedConfig = config
         try {
             val servers = allServersIncluding(config)
-            val jsonConfig = SingBoxConfigGenerator.generate(
-                servers, config.id, LOCAL_PORT, socksUsername, socksPassword
-            )
+            val jsonConfig = generateValidatedConfig(servers, config)
             cachedJsonConfig = jsonConfig
             startCore(jsonConfig, config)
             _state.emit(ProxyState.Connected(config))
@@ -538,7 +536,42 @@ class VpnProxyManager private constructor(private val context: Context) {
 
     // ───────────────────────── sing-box ──────────────────────────
 
+    /** Per-server check against the core, used to drop servers it would refuse to load. */
+    fun serverValidator(): ServerValidator = LibboxServerValidator { ensureCoreSetup() }
+
+    /**
+     * Builds the config for [servers], making sure the core accepts it.
+     *
+     * The core checks a config as a whole, so a single outbound it dislikes (a transport or
+     * field from a newer panel) would otherwise stop every server. If the full config is
+     * refused, servers are checked one by one, the bad ones are left out and the config is
+     * regenerated once. The selected server is the exception: if it is the bad one, starting
+     * is pointless and its own error is what the user needs to see.
+     */
+    private fun generateValidatedConfig(servers: List<VpnConfig>, selected: VpnConfig): String {
+        ensureCoreSetup()
+        val json = SingBoxConfigGenerator.generate(
+            servers, selected.id, LOCAL_PORT, socksUsername, socksPassword
+        )
+        try {
+            Libbox.checkConfig(json)
+            return json
+        } catch (e: Exception) {
+            Log.w(TAG, "Core refused the full config (${e.message?.take(160)}); checking servers one by one")
+        }
+        val validator = serverValidator()
+        validator.validate(selected)?.let { throw Exception(it) }
+        val outcome = validator.filter(servers)
+        Log.w(TAG, "Starting without ${outcome.rejected.size} server(s) the core rejected")
+        val retry = SingBoxConfigGenerator.generate(
+            outcome.valid, selected.id, LOCAL_PORT, socksUsername, socksPassword
+        )
+        Libbox.checkConfig(retry)
+        return retry
+    }
+
     /** One-time libbox setup; safe to call repeatedly, only the first call does work. */
+    @Synchronized
     private fun ensureCoreSetup() {
         if (coreSetupDone) return
         val base = context.filesDir.resolve("singbox").apply { mkdirs() }

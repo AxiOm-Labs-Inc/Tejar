@@ -1,0 +1,18 @@
+#profile-title: Example VPN
+https://panel.example.com/sub/token
+vless://aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee@reality.example.com:443?type=tcp&security=reality&sni=www.example.org&fp=chrome&pbk=PUBKEY_abc-_123&sid=ab12&flow=xtls-rprx-vision#🇩🇪 Germany | Reality
+vless://aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee@ws.example.com:443?type=ws&security=tls&sni=ws.example.com&host=cdn.example.com&path=%2Fchat%3Fed%3D2048#WS node 1
+vless://aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee@grpc.example.com:443?type=grpc&security=tls&sni=grpc.example.com&serviceName=svc#gRPC
+vless://aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee@hu.example.com:443?type=httpupgrade&security=tls&sni=hu.example.com&path=%2Fup&host=hu.example.com#HTTPUpgrade
+vless://aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee@xh.example.com:443?type=xhttp&mode=auto&security=tls&sni=xh.example.com&path=%2Fx#XHTTP node
+vless://aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee@[2001:db8::1]:8443?type=tcp&security=tls&sni=v6.example.com#IPv6 vless
+trojan://pass123@trojan.example.com:443?sni=t.example.com&type=ws&path=%2Ft#Trojan WS
+trojan://pass123@[2001:db8::2]:443?sni=t6.example.com#IPv6 trojan
+trojan://pass123@kcp.example.com:443?type=kcp&sni=k.example.com#Trojan mKCP
+vmess://eyJ2IjogIjIiLCAicHMiOiAiVk1lc3MgV1Mg8J+agCIsICJhZGQiOiAidm0uZXhhbXBsZS5jb20iLCAicG9ydCI6ICI0NDMiLCAiaWQiOiAiYWFhYWFhYWEtYmJiYi1jY2NjLWRkZGQtZWVlZWVlZWVlZWVlIiwgImFpZCI6ICIwIiwgInNjeSI6ICJhdXRvIiwgIm5ldCI6ICJ3cyIsICJ0eXBlIjogIm5vbmUiLCAiaG9zdCI6ICJjZG4uZXhhbXBsZS5jb20iLCAicGF0aCI6ICIvdm0iLCAidGxzIjogInRscyIsICJzbmkiOiAidm0uZXhhbXBsZS5jb20ifQ==
+vmess://eyJ2IjogIjIiLCAicHMiOiAiVk1lc3MgbUtDUCIsICJhZGQiOiAia2NwLmV4YW1wbGUuY29tIiwgInBvcnQiOiAiNDQzIiwgImlkIjogImFhYWFhYWFhLWJiYmItY2NjYy1kZGRkLWVlZWVlZWVlZWVlZSIsICJhaWQiOiAiMCIsICJzY3kiOiAiYXV0byIsICJuZXQiOiAia2NwIiwgInR5cGUiOiAibm9uZSIsICJob3N0IjogImNkbi5leGFtcGxlLmNvbSIsICJwYXRoIjogIi92bSIsICJ0bHMiOiAidGxzIiwgInNuaSI6ICJ2bS5leGFtcGxlLmNvbSJ9
+ss://YWVzLTI1Ni1nY206cGFzczEyMw@ss.example.com:8388#SS base64 userinfo
+ss://chacha20-ietf-poly1305:plain%2Bpass@ss2.example.com:8389#SS plain userinfo
+hysteria2://hy2pass@hy2.example.com:8443?sni=h.example.com&obfs=salamander&obfs-password=obfspw&insecure=1#Hy2 ⚡
+tuic://uuid:pw@tuic.example.com:443?congestion_control=bbr#TUIC
+vless://broken

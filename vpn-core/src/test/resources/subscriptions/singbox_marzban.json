@@ -1,0 +1,129 @@
+{
+  "log": {
+    "level": "warn"
+  },
+  "outbounds": [
+    {
+      "type": "selector",
+      "tag": "proxy",
+      "outbounds": [
+        "DE Reality",
+        "NL WS",
+        "DE ShadowTLS",
+        "FI XHTTP",
+        "SE Bogus",
+        "PL Hy2"
+      ]
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "block",
+      "tag": "block"
+    },
+    {
+      "type": "vless",
+      "tag": "DE Reality",
+      "server": "de.example.com",
+      "server_port": 443,
+      "uuid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "www.example.org",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "PUBKEY",
+          "short_id": "ab12"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "NL WS",
+      "server": "nl.example.com",
+      "server_port": 443,
+      "uuid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "tls": {
+        "enabled": true,
+        "server_name": "nl.example.com"
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/ws",
+        "headers": {
+          "Host": "nl.example.com"
+        }
+      }
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "DE ShadowTLS",
+      "server": "stls.example.com",
+      "server_port": 8443,
+      "method": "2022-blake3-aes-128-gcm",
+      "password": "cGFzc3dvcmQxMjM0NTY3OA==",
+      "detour": "stls-link-de"
+    },
+    {
+      "type": "shadowtls",
+      "tag": "stls-link-de",
+      "server": "stls.example.com",
+      "server_port": 443,
+      "version": 3,
+      "password": "stlspass",
+      "tls": {
+        "enabled": true,
+        "server_name": "cloud.example.com"
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "FI XHTTP",
+      "server": "fi.example.com",
+      "server_port": 443,
+      "uuid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "tls": {
+        "enabled": true,
+        "server_name": "fi.example.com"
+      },
+      "transport": {
+        "type": "xhttp",
+        "path": "/x"
+      }
+    },
+    {
+      "type": "trojan",
+      "tag": "SE Bogus",
+      "server": "se.example.com",
+      "server_port": 443,
+      "password": "pass123",
+      "bogus_field": true
+    },
+    {
+      "type": "hysteria2",
+      "tag": "PL Hy2",
+      "server": "pl.example.com",
+      "server_port": 8443,
+      "password": "hy2pass",
+      "tls": {
+        "enabled": true,
+        "server_name": "pl.example.com"
+      }
+    },
+    {
+      "type": "vmess",
+      "tag": "Orphan chain",
+      "server": "o.example.com",
+      "server_port": 443,
+      "uuid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "detour": "missing-tag"
+    }
+  ]
+}

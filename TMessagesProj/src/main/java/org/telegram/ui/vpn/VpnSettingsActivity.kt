@@ -958,8 +958,10 @@ class VpnSettingsActivity : BaseFragment() {
                 is SubscriptionUpdater.Result.Success -> {
                     // The updater already persisted everything and reloaded the core; the
                     // lastRefresh collector rebuilds the lists, this only reports the outcome.
+                    val skippedNote = if (result.skipped.isEmpty()) "" else
+                        " (skipped ${result.skipped.size}: ${ParseResult.describe(result.skipped)})"
                     if (!result.changed) {
-                        toast("Servers are up to date")
+                        toast("Servers are up to date$skippedNote")
                         return@launch
                     }
                     // Reload here too: the collector may not have run yet, and auto-select
@@ -967,7 +969,7 @@ class VpnSettingsActivity : BaseFragment() {
                     configs.clear()
                     configs.addAll(repository.getAll())
                     rebuildConfigsList()
-                    toast("Loaded ${result.fetched.size} servers")
+                    toast("Loaded ${result.fetched.size} servers$skippedNote", Toast.LENGTH_LONG)
                     beginAutoSelect(context, result.fetched.map { it.id }.toSet())
                 }
             }
