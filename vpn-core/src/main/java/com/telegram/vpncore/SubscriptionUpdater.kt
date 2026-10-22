@@ -28,9 +28,16 @@ object SubscriptionUpdater {
     /** After a failed automatic refresh, leave the subscription alone for this long. */
     const val FAILURE_BACKOFF_MS = 15L * 60 * 1000
 
-    /** Outcome of [refresh]. [changed] is false when the panel returned the same servers. */
+    /**
+     * Outcome of [refresh]. [changed] is false when the panel returned the same servers;
+     * [skipped] lists the entries left out (unsupported, invalid, refused by the core).
+     */
     sealed class Result {
-        data class Success(val fetched: List<VpnConfig>, val changed: Boolean) : Result()
+        data class Success(
+            val fetched: List<VpnConfig>,
+            val changed: Boolean,
+            val skipped: List<SkippedEntry> = emptyList()
+        ) : Result()
         data class Failure(val message: String) : Result()
     }
 
@@ -65,9 +72,19 @@ object SubscriptionUpdater {
         val configRepo = VpnConfigRepository(appContext)
         val subRepo = VpnSubscriptionRepository(appContext)
         try {
-            val fetched = SubscriptionFetcher.fetch(sub.url)
+            val parsed = SubscriptionFetcher.fetch(sub.url)
+            // One server the core cannot load would take every other one down with it at
+            // start, so ask the core about each before it reaches the stored list.
+            val validation = VpnProxyManager.getInstance(appContext).serverValidator().filter(parsed.servers)
+            val fetched = validation.valid
+            val skipped = parsed.skipped + validation.rejected
             // An empty answer is a broken panel, not "no servers": keep what we have.
-            if (fetched.isEmpty()) return Result.Failure("No servers found in subscription")
+            if (fetched.isEmpty()) {
+                return Result.Failure(
+                    if (skipped.isEmpty()) "No servers found in subscription"
+                    else "No usable servers (skipped ${skipped.size}: ${ParseResult.describe(skipped)})"
+                )
+            }
 
             val oldSub = subRepo.getById(sub.id) ?: sub
             val stored = configRepo.getAll().associateBy { it.id }
@@ -78,7 +95,7 @@ object SubscriptionUpdater {
                 subRepo.save(oldSub.copy(lastUpdated = now))
                 lastFailure.remove(sub.id)
                 _lastRefresh.value = now
-                return Result.Success(fetched, changed = false)
+                return Result.Success(fetched, changed = false, skipped = skipped)
             }
 
             val activeBefore = configRepo.getActive()
@@ -104,7 +121,7 @@ object SubscriptionUpdater {
             VpnProxyManager.getInstance(appContext).reloadServers()
             lastFailure.remove(sub.id)
             _lastRefresh.value = now
-            return Result.Success(fetched, changed = true)
+            return Result.Success(fetched, changed = true, skipped = skipped)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {

@@ -35,6 +35,12 @@ android {
         freeCompilerArgs += ["-Xskip-metadata-version-check"]
     }
 
+    testOptions {
+        // Parsing code only touches android.util.Log; make it a no-op instead of throwing
+        // "not mocked" so the parsers can be tested on a plain JVM.
+        unitTests.returnDefaultValues = true
+    }
+
     buildTypes {
         debug {
             minifyEnabled false
@@ -57,4 +63,8 @@ dependencies {
 
     // Core
     implementation "androidx.core:core-ktx:1.13.1"
+
+    // Pure-JVM unit tests. Android's org.json is a stub there, so bring the real one.
+    testImplementation "junit:junit:4.13.2"
+    testImplementation "org.json:json:20231013"
 }

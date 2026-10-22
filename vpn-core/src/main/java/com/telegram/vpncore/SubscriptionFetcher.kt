@@ -1,6 +1,5 @@
 package com.telegram.vpncore
 
-import android.util.Base64
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -26,32 +25,44 @@ object SubscriptionFetcher {
     // "SFA/" comes first deliberately: it selects the sing-box format, which is the one the
     // panel generates most completely. Its links format silently omits whole protocols
     // (Naive among them), so a v2rayNG UA gets a subscription missing servers that exist.
+    // The version is the bundled core's: the panel picks the sing-box template (field names,
+    // layout) from it, and claiming an older client got a layout the newer core may reject.
     // The rest stay as fallbacks for panels that don't speak sing-box.
     private val USER_AGENTS = listOf(
-        "SFA/1.11.0",
+        "SFA/${SingBoxCore.VERSION}",
         "v2rayNG/1.8.0",
         "clash/1.18.0",
         "Mozilla/5.0"   // fallback: get HTML, then extract links
     )
 
-    suspend fun fetch(url: String): List<VpnConfig> = withContext(Dispatchers.IO) {
+    /**
+     * Fetches and parses [url]. Throws when no usable server came out; the message then says
+     * what was skipped and why (never the entries themselves).
+     */
+    suspend fun fetch(url: String): ParseResult = withContext(Dispatchers.IO) {
         require(url.startsWith("https://", ignoreCase = true)) {
             "Subscription URL must use HTTPS: $url"
         }
         var lastError: Exception? = null
+        var onlySkipped: ParseResult? = null
         for (ua in USER_AGENTS) {
             try {
                 val raw = downloadText(url, ua)
                 if (raw.isBlank()) continue
                 val results = parseSubscription(raw)
-                if (results.isNotEmpty()) {
-                    Log.d(TAG, "Fetched ${results.size} configs with UA=$ua")
+                if (results.servers.isNotEmpty()) {
+                    Log.d(TAG, "Fetched ${results.servers.size} configs with UA=$ua, " +
+                        "skipped ${results.skipped.size}")
                     return@withContext results
                 }
+                if (results.skipped.isNotEmpty()) onlySkipped = results
             } catch (e: Exception) {
                 Log.w(TAG, "Fetch attempt failed with UA=$ua: ${e.message}")
                 lastError = e
             }
+        }
+        onlySkipped?.let {
+            throw Exception("No usable servers (skipped ${it.skipped.size}: ${ParseResult.describe(it.skipped)})")
         }
         throw lastError ?: Exception("No servers found in subscription")
     }
@@ -93,24 +104,24 @@ object SubscriptionFetcher {
 
     // ─────────────────────── Parse ────────────────────────────────
 
-    private fun parseSubscription(raw: String): List<VpnConfig> {
+    internal fun parseSubscription(raw: String): ParseResult {
         val trimmed = raw.trim()
 
         // 0. sing-box config document — use the panel's own outbounds instead of re-deriving them
         if (SingBoxSubscriptionParser.looksLikeSingBoxConfig(trimmed)) {
             val results = SingBoxSubscriptionParser.parse(trimmed)
-            if (results.isNotEmpty()) return results
+            if (!results.isEmpty) return results
         }
 
         // 1. Try base64 decode first (standard Marzban/v2ray subscription)
         tryBase64Decode(trimmed)?.let { decoded ->
             val results = extractLinksFromText(decoded)
-            if (results.isNotEmpty()) return results
+            if (!results.isEmpty) return results
         }
 
         // 2. Try plain text (one link per line)
         val plainResults = extractLinksFromText(trimmed)
-        if (plainResults.isNotEmpty()) return plainResults
+        if (!plainResults.isEmpty) return plainResults
 
         // 3. Try HTML extraction (Marzban web UI or other panels)
         if (trimmed.contains("<html", ignoreCase = true) ||
@@ -118,29 +129,43 @@ object SubscriptionFetcher {
             return extractLinksFromHtml(trimmed)
         }
 
-        return emptyList()
+        return ParseResult.EMPTY
     }
 
-    private fun extractLinksFromText(text: String): List<VpnConfig> {
+    private val SCHEME_PREFIX = Regex("""^([A-Za-z][A-Za-z0-9+.-]{0,15})://""")
+
+    private fun extractLinksFromText(text: String): ParseResult {
         val results = mutableListOf<VpnConfig>()
+        val skipped = mutableListOf<SkippedEntry>()
         for (line in text.lines()) {
             val trimmed = line.trim()
             if (!looksLikeVpnLink(trimmed)) {
                 // Unrecognised schemes used to vanish without a trace, which is how the
                 // subscription could carry servers that simply never appeared in the list.
                 // Log the scheme only — everything after "://" is credentials.
-                if (trimmed.contains("://")) {
-                    Log.w(TAG, "Unsupported scheme in subscription: ${trimmed.substringBefore("://")}")
+                // Plain web URLs (a profile page, a support link) are not servers.
+                val scheme = SCHEME_PREFIX.find(trimmed)?.groupValues?.get(1)?.lowercase()
+                if (scheme != null && scheme != "http" && scheme != "https") {
+                    Log.w(TAG, "Unsupported scheme in subscription: $scheme")
+                    skipped.add(SkippedEntry("unsupported scheme $scheme"))
                 }
                 continue
             }
-            try {
-                results.add(LinkParser.parse(trimmed))
-            } catch (e: Exception) {
-                Log.w(TAG, "Skipping invalid link: ${redactCredentials(trimmed).take(60)} — ${e.message}")
-            }
+            parseLink(trimmed, results, skipped)
         }
-        return results
+        return ParseResult(results, skipped)
+    }
+
+    private fun parseLink(link: String, results: MutableList<VpnConfig>, skipped: MutableList<SkippedEntry>) {
+        try {
+            results.add(LinkParser.parse(link))
+        } catch (e: UnsupportedEntryException) {
+            Log.w(TAG, "Skipping link: ${e.reason}")
+            skipped.add(SkippedEntry(e.reason, raw = link, xrayCapable = e.xrayCapable))
+        } catch (e: Exception) {
+            Log.w(TAG, "Skipping invalid link: ${redactCredentials(link).take(60)} — ${e.message}")
+            skipped.add(SkippedEntry(SkippedEntry.INVALID_LINK))
+        }
     }
 
     /**
@@ -157,7 +182,7 @@ object SubscriptionFetcher {
      * Extracts VPN links embedded in HTML (e.g. Marzban web page).
      * Looks for vless://, vmess://, ss://, trojan:// anywhere in the HTML.
      */
-    private fun extractLinksFromHtml(html: String): List<VpnConfig> {
+    private fun extractLinksFromHtml(html: String): ParseResult {
         val pattern = Regex(
             """(vless|vmess|ss|trojan)://[^\s"'<>&]+""",
             RegexOption.IGNORE_CASE
@@ -166,22 +191,15 @@ object SubscriptionFetcher {
         Log.d(TAG, "HTML extraction found ${found.size} raw links")
 
         val results = mutableListOf<VpnConfig>()
-        for (link in found) {
-            try {
-                results.add(LinkParser.parse(link))
-            } catch (e: Exception) {
-                Log.w(TAG, "Skipping HTML link: ${redactCredentials(link).take(60)} — ${e.message}")
-            }
-        }
-        return results
+        val skipped = mutableListOf<SkippedEntry>()
+        for (link in found) parseLink(link, results, skipped)
+        return ParseResult(results, skipped)
     }
 
     private fun tryBase64Decode(input: String): String? = try {
-        // Remove whitespace — some servers add line breaks inside base64
-        val clean = input.replace("\n", "").replace("\r", "").trim()
-        val decoded = Base64.decode(clean, Base64.DEFAULT or Base64.NO_WRAP)
-        val text = String(decoded, Charsets.UTF_8)
-        if (looksLikeVpnLink(text) || text.contains("\n")) text else null
+        // LenientBase64 ignores line breaks and accepts either alphabet, with or without padding.
+        val text = LenientBase64.decodeToString(input)
+        if (text != null && (looksLikeVpnLink(text) || text.contains("\n"))) text else null
     } catch (_: Exception) {
         null
     }

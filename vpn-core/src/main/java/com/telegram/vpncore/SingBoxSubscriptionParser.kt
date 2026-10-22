@@ -23,6 +23,13 @@ object SingBoxSubscriptionParser {
     /** Outbound types that are routing constructs, not servers the user can pick. */
     private val NON_SERVER_TYPES = setOf("selector", "urltest", "direct", "block", "dns")
 
+    /**
+     * Transport types the core implements for V2Ray-style outbounds. A panel serving an xray
+     * client's layout (xhttp, mkcp, ...) can name others; the core would refuse the whole
+     * config for them, so they are set aside as xray-only instead.
+     */
+    private val CORE_TRANSPORTS = setOf("http", "ws", "quic", "grpc", "httpupgrade")
+
     /** Guard against a subscription whose detours form a loop, or an absurdly deep chain. */
     private const val MAX_CHAIN_DEPTH = 8
 
@@ -37,8 +44,8 @@ object SingBoxSubscriptionParser {
         }
     }
 
-    fun parse(text: String): List<VpnConfig> {
-        val outbounds = JSONObject(text).optJSONArray("outbounds") ?: return emptyList()
+    fun parse(text: String): ParseResult {
+        val outbounds = JSONObject(text).optJSONArray("outbounds") ?: return ParseResult.EMPTY
 
         // Chains first. The panel renders ShadowTLS as two outbounds — the one the user picks
         // (shadowsocks) carries "detour" naming the other (shadowtls), which is a transport
@@ -55,6 +62,7 @@ object SingBoxSubscriptionParser {
         }
 
         val results = mutableListOf<VpnConfig>()
+        val skipped = mutableListOf<SkippedEntry>()
         val usedIds = HashSet<String>()
         for (i in 0 until outbounds.length()) {
             val outbound = outbounds.optJSONObject(i) ?: continue
@@ -68,6 +76,7 @@ object SingBoxSubscriptionParser {
             val serverPort = outbound.optInt("server_port")
             if (server.isBlank() || serverPort == 0) {
                 Log.w(TAG, "Skipping outbound '$type' without server/server_port")
+                skipped.add(SkippedEntry("no server address: ${type.take(24)}"))
                 continue
             }
             // An unresolvable chain means we cannot reproduce this server at all. Dropping the
@@ -77,6 +86,17 @@ object SingBoxSubscriptionParser {
             val dependencies = collectChain(outbound, byTag)
             if (dependencies == null) {
                 Log.w(TAG, "Skipping '$type' server: its detour chain is incomplete")
+                skipped.add(SkippedEntry("incomplete detour chain"))
+                continue
+            }
+            val transport = outbound.optJSONObject("transport")?.optString("type").orEmpty()
+            if (transport.isNotEmpty() && transport !in CORE_TRANSPORTS) {
+                skipped.add(
+                    SkippedEntry(
+                        SkippedEntry.needsXray(transport.take(24)), raw = outbound.toString(),
+                        xrayCapable = true, source = SkipSource.SINGBOX_OUTBOUND
+                    )
+                )
                 continue
             }
             results.add(
@@ -93,8 +113,8 @@ object SingBoxSubscriptionParser {
             )
         }
         Log.d(TAG, "Parsed ${results.size} servers from sing-box subscription " +
-            "(${chainLinks.size} chain links folded in)")
-        return results
+            "(${chainLinks.size} chain links folded in, ${skipped.size} skipped)")
+        return ParseResult(results, skipped)
     }
 
     /**
