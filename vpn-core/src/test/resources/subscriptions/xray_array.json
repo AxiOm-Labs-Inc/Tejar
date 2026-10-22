@@ -1,0 +1,72 @@
+[
+  {
+    "remarks": "🇩🇪 DE Reality",
+    "log": {"loglevel": "warning"},
+    "dns": {"servers": ["1.1.1.1"]},
+    "inbounds": [{"tag": "socks", "port": 10808, "protocol": "socks"}],
+    "outbounds": [
+      {"tag": "proxy", "protocol": "vless",
+       "settings": {"vnext": [{"address": "de.example.com", "port": 443,
+         "users": [{"id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "encryption": "none", "flow": "xtls-rprx-vision"}]}]},
+       "streamSettings": {"network": "tcp", "security": "reality",
+         "realitySettings": {"serverName": "www.example.org", "fingerprint": "chrome", "publicKey": "PUBKEY123", "shortId": "ab12", "spiderX": "/"}}},
+      {"tag": "direct", "protocol": "freedom"},
+      {"tag": "block", "protocol": "blackhole"}
+    ],
+    "routing": {"rules": []}
+  },
+  {
+    "remarks": "NL VMess WS",
+    "outbounds": [
+      {"tag": "proxy", "protocol": "vmess",
+       "settings": {"vnext": [{"address": "nl.example.com", "port": 443,
+         "users": [{"id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "alterId": 0, "security": "auto"}]}]},
+       "streamSettings": {"network": "ws", "security": "tls",
+         "tlsSettings": {"serverName": "nl.example.com", "allowInsecure": true, "alpn": ["h2", "http/1.1"], "fingerprint": "chrome"},
+         "wsSettings": {"path": "/vm", "headers": {"Host": "cdn.example.com"}}}},
+      {"tag": "direct", "protocol": "freedom"}
+    ]
+  },
+  {
+    "remarks": "FI Trojan gRPC",
+    "outbounds": [
+      {"tag": "proxy", "protocol": "trojan",
+       "settings": {"servers": [{"address": "fi.example.com", "port": 443, "password": "pass123"}]},
+       "streamSettings": {"network": "grpc", "security": "tls", "tlsSettings": {"serverName": "fi.example.com"},
+         "grpcSettings": {"serviceName": "svc"}}}
+    ]
+  },
+  {
+    "remarks": "SE SS",
+    "outbounds": [
+      {"tag": "proxy", "protocol": "shadowsocks",
+       "settings": {"servers": [{"address": "se.example.com", "port": 8388, "method": "aes-256-gcm", "password": "pass123"}]}}
+    ]
+  },
+  {
+    "remarks": "PL HTTPUpgrade",
+    "outbounds": [
+      {"tag": "proxy", "protocol": "vless",
+       "settings": {"vnext": [{"address": "pl.example.com", "port": 443, "users": [{"id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "encryption": "none"}]}]},
+       "streamSettings": {"network": "httpupgrade", "security": "tls", "tlsSettings": {"serverName": "pl.example.com"},
+         "httpupgradeSettings": {"path": "/up", "host": "pl.example.com"}}}
+    ]
+  },
+  {
+    "remarks": "FR XHTTP",
+    "outbounds": [
+      {"tag": "proxy", "protocol": "vless",
+       "settings": {"vnext": [{"address": "fr.example.com", "port": 443, "users": [{"id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "encryption": "none"}]}]},
+       "streamSettings": {"network": "xhttp", "security": "tls", "tlsSettings": {"serverName": "fr.example.com"},
+         "xhttpSettings": {"path": "/x", "mode": "auto"}}}
+    ]
+  },
+  {
+    "remarks": "AT mKCP",
+    "outbounds": [
+      {"tag": "proxy", "protocol": "vmess",
+       "settings": {"vnext": [{"address": "at.example.com", "port": 4000, "users": [{"id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"}]}]},
+       "streamSettings": {"network": "kcp", "kcpSettings": {"header": {"type": "wechat-video"}}}}
+    ]
+  }
+]

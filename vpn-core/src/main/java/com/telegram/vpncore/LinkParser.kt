@@ -234,8 +234,12 @@ object LinkParser {
      */
     private fun parseSsPlugin(raw: String?): Pair<String, String> {
         if (raw.isNullOrBlank()) return "" to ""
-        val name = raw.substringBefore(';')
-        val opts = raw.substringAfter(';', "")
+        return mapSsPlugin(raw.substringBefore(';'), raw.substringAfter(';', ""))
+    }
+
+    /** Core-side plugin name and options for a SIP003 plugin; throws for plugins it lacks. */
+    fun mapSsPlugin(name: String, opts: String): Pair<String, String> {
+        if (name.isBlank()) return "" to ""
         return when (name) {
             "obfs-local", "simple-obfs" -> "obfs-local" to opts
             "v2ray-plugin" -> "v2ray-plugin" to opts

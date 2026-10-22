@@ -38,7 +38,8 @@ object SingBoxSubscriptionParser {
         val trimmed = text.trimStart()
         if (!trimmed.startsWith("{")) return false
         return try {
-            JSONObject(trimmed).has("outbounds")
+            // Xray documents have "outbounds" too (with "protocol" instead of "type").
+            JSONObject(trimmed).has("outbounds") && !XrayJsonParser.looksLikeXray(trimmed)
         } catch (_: Exception) {
             false
         }

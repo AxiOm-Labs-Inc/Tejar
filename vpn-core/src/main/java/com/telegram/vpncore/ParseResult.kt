@@ -1,13 +1,14 @@
 package com.telegram.vpncore
 
 /** Where a skipped entry came from, so a later stage knows how to re-read [SkippedEntry.raw]. */
-enum class SkipSource { LINK, SINGBOX_OUTBOUND }
+enum class SkipSource { LINK, SINGBOX_OUTBOUND, XRAY_OUTBOUND, CLASH_PROXY }
 
 /**
  * One subscription entry that did not become a server.
  *
  * [raw] is the original share link or sing-box outbound JSON, kept in memory only (it carries
- * credentials: never log or toast it). It exists for entries with [xrayCapable] set: they are
+ * credentials: never log or toast it; [SkipSource.XRAY_OUTBOUND] and [SkipSource.CLASH_PROXY]
+ * hold JSON of the original xray outbound / Clash proxy entry). It exists for entries with [xrayCapable] set: they are
  * well-formed but need a transport only xray has, so a later stage can hand them to an xray
  * process without re-parsing the subscription.
  */
@@ -15,7 +16,9 @@ data class SkippedEntry(
     val reason: String,
     val raw: String = "",
     val xrayCapable: Boolean = false,
-    val source: SkipSource = SkipSource.LINK
+    val source: SkipSource = SkipSource.LINK,
+    /** Display name from the subscription (a remark or tag), for the stage that picks this up. */
+    val name: String = ""
 ) {
     companion object {
         const val REJECTED_BY_CORE = "rejected by core"
