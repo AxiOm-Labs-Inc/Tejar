@@ -28,7 +28,7 @@ import org.telegram.ui.ActionBar.Theme;
 
 public class AboutAppActivity extends BaseFragment implements NotificationCenter.NotificationCenterDelegate {
 
-    private static final String RELEASES_URL = "https://github.com/arsenii-cmd/Tejar/releases";
+    private static final String RELEASES_URL = "https://github.com/AxiOm-Labs-Inc/Tejar/releases";
 
     private static final int COLOR_ACCENT = 0xFF6C5CE7;
     private static final int COLOR_ACCENT_BG = 0x1A6C5CE7;
@@ -160,7 +160,7 @@ public class AboutAppActivity extends BaseFragment implements NotificationCenter
         githubTextBlock.addView(githubTitle);
 
         TextView githubSub = new TextView(context);
-        githubSub.setText("github.com/arsenii-cmd/Tejar");
+        githubSub.setText("github.com/AxiOm-Labs-Inc/Tejar");
         githubSub.setTextSize(12);
         githubSub.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
         githubTextBlock.addView(githubSub);

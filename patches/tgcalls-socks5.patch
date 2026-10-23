@@ -1,0 +1,32 @@
+diff --git a/tgcalls/v2/NativeNetworkingImpl.cpp b/tgcalls/v2/NativeNetworkingImpl.cpp
+index b067cf5..62e9c80 100644
+--- a/tgcalls/v2/NativeNetworkingImpl.cpp
++++ b/tgcalls/v2/NativeNetworkingImpl.cpp
+@@ -2,6 +2,8 @@
+ 
+ #include "p2p/base/basic_packet_socket_factory.h"
+ #include "p2p/client/basic_port_allocator.h"
++#include "rtc_base/crypt_string.h"
++#include "rtc_base/proxy_info.h"
+ #include "p2p/base/p2p_transport_channel.h"
+ #include "p2p/base/basic_async_resolver_factory.h"
+ #include "api/packet_socket_factory.h"
+@@ -603,6 +605,18 @@ void NativeNetworkingImpl::resetDtlsSrtpTransport() {
+     
+     _portAllocator->set_step_delay(cricket::kMinimumStepDelay);
+ 
++    // Tejar: route relay traffic through the configured SOCKS5 proxy. Without this the
++    // allocator hands PROXY_NONE to CreateClientTcpSocket and the TCP relay connection
++    // goes out directly. Mirrors NetworkManager.cpp (the v1 path), which already does this.
++    if (_proxy) {
++        rtc::ProxyInfo proxyInfo;
++        proxyInfo.type = rtc::ProxyType::PROXY_SOCKS5;
++        proxyInfo.address = rtc::SocketAddress(_proxy->host, _proxy->port);
++        proxyInfo.username = _proxy->login;
++        proxyInfo.password = rtc::CryptString(CryptStringImpl(_proxy->password));
++        _portAllocator->set_proxy("t/1.0", proxyInfo);
++    }
++
+     _portAllocator->set_flags(flags);
+     _portAllocator->Initialize();
+ 

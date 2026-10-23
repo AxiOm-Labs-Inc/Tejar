@@ -5,6 +5,7 @@ import org.telegram.messenger.MessagesController
 import org.telegram.messenger.NotificationCenter
 import org.telegram.messenger.SharedConfig
 import org.telegram.tgnet.ConnectionsManager
+import org.telegram.utils.proxy.ProxySettings
 
 object TelegramProxyBridge {
 
@@ -15,11 +16,16 @@ object TelegramProxyBridge {
             SharedConfig.loadProxyList()
             // Drop any previous VPN-proxy entries for this host:port (ignoring creds) so the
             // auto-managed VPN proxy never accumulates duplicates in the proxy list.
-            SharedConfig.proxyList.removeAll { it.address == host && it.port == port }
+            SharedConfig.proxyList.removeAll { it.settings.address == host && it.settings.port == port }
 
-            val proxyInfo = SharedConfig.ProxyInfo(host, port, username, password, "")
-            SharedConfig.addProxy(proxyInfo)
-            SharedConfig.currentProxy = proxyInfo
+            val settings = ProxySettings.builder()
+                .setType(ProxySettings.Type.SOCKS5)
+                .setAddress(host)
+                .setPort(port)
+                .setUser(username)
+                .setPassword(password)
+                .build()
+            SharedConfig.currentProxy = SharedConfig.addProxy(SharedConfig.ProxyInfo(settings))
             SharedConfig.saveConfig()
 
             // Persist proxy state to "mainconfig" exactly like ProxyListActivity does.
@@ -28,15 +34,11 @@ object TelegramProxyBridge {
             // on the next reconnect and silently connects direct while xray still listens
             // locally — the intermittent "proxy stops working" symptom.
             val editor = MessagesController.getGlobalMainSettings().edit()
-            editor.putString("proxy_ip", host)
-            editor.putString("proxy_user", username)
-            editor.putString("proxy_pass", password)
-            editor.putString("proxy_secret", "")
-            editor.putInt("proxy_port", port)
+            settings.toSharedPreferences(editor)
             editor.putBoolean("proxy_enabled", true)
             editor.commit()
 
-            ConnectionsManager.setProxySettings(true, host, port, username, password, "")
+            ConnectionsManager.setProxySettings(true, settings)
 
             NotificationCenter.getGlobalInstance()
                 .postNotificationName(NotificationCenter.proxySettingsChanged)
@@ -54,7 +56,7 @@ object TelegramProxyBridge {
             editor.putBoolean("proxy_enabled", false)
             editor.commit()
 
-            ConnectionsManager.setProxySettings(false, "", 1080, "", "", "")
+            ConnectionsManager.setProxySettings(false, null)
             SharedConfig.saveConfig()
 
             NotificationCenter.getGlobalInstance()

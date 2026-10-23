@@ -36,6 +36,7 @@ import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.GooglePlayServicesUtil;
 
 import org.json.JSONObject;
+import org.telegram.messenger.utils.Choreographer60FpsContent;
 import org.telegram.messenger.voip.VideoCapturerDevice;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
@@ -292,7 +293,11 @@ public class ApplicationLoader extends Application {
 
         super.onCreate();
 
+        // AndroidUtilities must be initialized before FileLog
+        final String helloWorld = AndroidUtilities.getHelloWorld();
+
         if (BuildVars.LOGS_ENABLED) {
+            FileLog.d(helloWorld);
             FileLog.d("app start time = " + (startTime = SystemClock.elapsedRealtime()));
             try {
                 final PackageInfo info = ApplicationLoader.applicationContext.getPackageManager().getPackageInfo(ApplicationLoader.applicationContext.getPackageName(), 0);
@@ -338,6 +343,10 @@ public class ApplicationLoader extends Application {
                 }
             }
         };
+        if (BuildConfig.DEBUG_VERSION) {
+            new ANRDetector(FileLog::dumpANR);
+        }
+
         if (BuildVars.LOGS_ENABLED) {
             FileLog.d("load libs time = " + (SystemClock.elapsedRealtime() - startTime));
         }
@@ -348,6 +357,10 @@ public class ApplicationLoader extends Application {
 
         LauncherIconController.tryFixLauncherIconIfNeeded();
         ProxyRotationController.init();
+
+        //if (BuildConfig.DEBUG_PRIVATE_VERSION) {
+        //    Choreographer60FpsContent.getInstance().addFrameCallback(debugEverySecondChecks, 1);
+        //}
 
         // Restore VPN state if it was running before the app was closed
         // and subscribe to foreground/background events: the tunnel runs while the app is
@@ -428,6 +441,10 @@ public class ApplicationLoader extends Application {
         }
         return MessagesController.getMainSettings(UserConfig.selectedAccount).getBoolean("backgroundConnection", false);
     }
+
+    private final Runnable debugEverySecondChecks = () -> AndroidUtilities.runOnUIThread(() -> {
+        NotificationCenter.sanitize();
+    });
 
     public static void startPushService() {
         SharedPreferences preferences = MessagesController.getGlobalNotificationsSettings();

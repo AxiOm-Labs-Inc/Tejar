@@ -20,7 +20,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Checks arsenii-cmd/Tejar GitHub Releases for a newer build and downloads it.
+ * Checks AxiOm-Labs-Inc/Tejar GitHub Releases for a newer build and downloads it.
  * Modeled on BetaUpdaterController (HockeyApp flavor), reusing the same BetaUpdate
  * model and UpdateAppAlertDialog/UpdateLayout UI — only the update source differs.
  *
@@ -31,7 +31,7 @@ import java.util.regex.Pattern;
  */
 public class GithubUpdaterController {
 
-    private static final String RELEASES_URL = "https://api.github.com/repos/arsenii-cmd/Tejar/releases/latest";
+    private static final String RELEASES_URL = "https://api.github.com/repos/AxiOm-Labs-Inc/Tejar/releases/latest";
     // Tejar-<versionName>-<versionCode>-<arm64|armv7>-standalone.apk
     // A release carries one asset per ABI; pickAbiTag() selects the one this device can install.
     private static final Pattern ASSET_NAME_PATTERN = Pattern.compile(
