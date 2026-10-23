@@ -19,7 +19,6 @@ class VpnConfigRepository(context: Context) {
         private const val KEY_CONFIGS = "configs"
         private const val KEY_ACTIVE_ID = "active_config_id"
         private const val KEY_VPN_RUNNING = "vpn_running"
-        private const val KEY_ENERGY_SAVING = "energy_saving"
         private const val KEY_AUTO_SELECT = "auto_select"
         private const val KEY_PINNED_ID = "pinned_config_id"
         private const val KEY_DEFAULTS_FORCED = "defaults_forced_152"
@@ -99,17 +98,8 @@ class VpnConfigRepository(context: Context) {
 
     fun isVpnRunning(): Boolean = prefs.getBoolean(KEY_VPN_RUNNING, false)
 
-    fun setEnergySaving(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_ENERGY_SAVING, enabled).apply()
-    }
-
-    // The default covers a fresh install; after the user touches the switch their choice is
-    // stored and read back here. The one exception is [applyForcedDefaultsOnce], which runs
-    // a single time on upgrade and overwrites this.
-    fun isEnergySaving(): Boolean = prefs.getBoolean(KEY_ENERGY_SAVING, true)
-
     /**
-     * One-time migration: turns Auto-select, Energy Saving and Auto-reconnect on for everyone.
+     * One-time migration: turns Auto-select and Auto-reconnect on for everyone.
      *
      * Deliberately overrides an explicit "off" as well, not just the never-touched case — the
      * two are indistinguishable in storage anyway (both are simply a missing key), and the
@@ -119,7 +109,6 @@ class VpnConfigRepository(context: Context) {
     fun applyForcedDefaultsOnce() {
         if (prefs.getBoolean(KEY_DEFAULTS_FORCED, false)) return
         prefs.edit()
-            .putBoolean(KEY_ENERGY_SAVING, true)
             .putBoolean(KEY_AUTO_SELECT, true)
             .putBoolean(KEY_DEFAULTS_FORCED, true)
             .apply()

@@ -350,7 +350,8 @@ public class ApplicationLoader extends Application {
         ProxyRotationController.init();
 
         // Restore VPN state if it was running before the app was closed
-        // and subscribe to foreground/background events for Energy Saving mode.
+        // and subscribe to foreground/background events: the tunnel runs while the app is
+        // visible, and in the background only with Telegram's Background Connection on.
         //
         // The global ConnectionListener ensures TelegramProxyBridge.enableProxy() is called
         // whenever xray-core transitions to Connected — regardless of whether the VPN settings
@@ -375,10 +376,14 @@ public class ApplicationLoader extends Application {
                 }
             });
 
-            // With Energy Saving the tunnel only runs while the app is visible. A process started
-            // in the background (FCM push, keep-alive service) never gets onBecameBackground, so
-            // starting here would leave the tunnel running; onBecameForeground starts it instead.
-            if (vpnRepo.isVpnRunning() && !vpnRepo.isEnergySaving()) {
+            // Auto-reconnect is otherwise only applied once the VPN screen is opened.
+            vpnManager.setAutoReconnect(applicationContext.getSharedPreferences("vpn_settings", MODE_PRIVATE)
+                    .getBoolean("auto_reconnect", false));
+
+            // A process started in the background (FCM push, keep-alive service, boot) never gets
+            // onBecameBackground, so starting here would leave the tunnel running; without
+            // Background Connection onBecameForeground starts it instead.
+            if (vpnRepo.isVpnRunning() && isVpnBackgroundAllowed()) {
                 com.telegram.vpncore.VpnConfig activeConfig = vpnRepo.getActive();
                 if (activeConfig != null) {
                     vpnManager.startProxy(activeConfig);  // listener will call enableProxy when ready
@@ -391,20 +396,19 @@ public class ApplicationLoader extends Application {
             ForegroundDetector.getInstance().addListener(new ForegroundDetector.Listener() {
                 @Override
                 public void onBecameForeground() {
-                    // Before the Energy Saving early returns: those only concern the tunnel,
-                    // and a long-backgrounded app is exactly when the list is likely stale.
+                    // Before the early returns: those only concern the tunnel, and a
+                    // long-backgrounded app is exactly when the list is likely stale.
                     com.telegram.vpncore.SubscriptionUpdater.INSTANCE.refreshStaleAsync(applicationContext);
-                    if (!vpnRepo.isEnergySaving()) return;
                     if (!vpnRepo.isVpnRunning()) return;
                     com.telegram.vpncore.VpnConfig config = vpnRepo.getActive();
                     if (config != null && !vpnManager.isRunning()) {
-                        vpnManager.resumeProxy();  // fast path after Energy Saving pause
+                        vpnManager.resumeProxy();  // fast path after a background pause
                     }
                 }
 
                 @Override
                 public void onBecameBackground() {
-                    if (!vpnRepo.isEnergySaving()) return;
+                    if (isVpnBackgroundAllowed()) return;
                     if (vpnManager.shouldPauseForEnergySaving()) {
                         // Stops the tunnel (or aborts an in-progress connect) without clearing vpn_running.
                         vpnManager.pauseProxy();
@@ -414,6 +418,15 @@ public class ApplicationLoader extends Application {
         } catch (Exception e) {
             FileLog.e("Failed to restore VPN state", e);
         }
+    }
+
+    /** The VPN tunnel may stay up in the background only with Telegram's Background Connection on. */
+    public static boolean isVpnBackgroundAllowed() {
+        SharedPreferences preferences = MessagesController.getGlobalNotificationsSettings();
+        if (preferences.contains("pushConnection")) {
+            return preferences.getBoolean("pushConnection", true);
+        }
+        return MessagesController.getMainSettings(UserConfig.selectedAccount).getBoolean("backgroundConnection", false);
     }
 
     public static void startPushService() {
