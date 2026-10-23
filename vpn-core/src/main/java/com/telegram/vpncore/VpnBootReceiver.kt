@@ -36,7 +36,8 @@ class VpnBootReceiver : BroadcastReceiver() {
         bootExecutor.execute {
             try {
                 val repo = VpnConfigRepository(appContext)
-                if (repo.isVpnRunning()) {
+                // With Energy Saving the tunnel waits for the app to come to the foreground.
+                if (repo.isVpnRunning() && !repo.isEnergySaving()) {
                     val active = repo.getActive()
                     if (active != null) {
                         val manager = VpnProxyManager.getInstance(appContext)
