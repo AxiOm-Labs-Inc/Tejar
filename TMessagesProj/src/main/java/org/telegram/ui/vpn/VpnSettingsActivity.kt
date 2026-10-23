@@ -68,7 +68,6 @@ class VpnSettingsActivity : BaseFragment() {
     private val PREFS_NAME = "vpn_settings"
     private val KEY_AUTO_RECONNECT = "auto_reconnect"
 
-    private lateinit var energySavingSwitch: Switch
     private lateinit var autoSelectSwitch: Switch
 
     // Colors
@@ -264,57 +263,6 @@ class VpnSettingsActivity : BaseFragment() {
         }
         autoReconnectRow.addView(autoReconnectSwitch)
         root.addView(autoReconnectRow)
-
-        // ════════════════════ ENERGY SAVING ROW ════════════════════
-        val savedEnergySaving = repository.isEnergySaving()
-        val energySavingRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = makeRoundRect(dp(16), if (savedEnergySaving) COLOR_GREEN_BG else Theme.getColor(Theme.key_windowBackgroundGray))
-            setPadding(dp(16), dp(14), dp(16), dp(14))
-            layoutParams = marginParams(bottom = dp(12))
-        }
-
-        val energyDot = View(context).apply {
-            val size = dp(8)
-            layoutParams = LinearLayout.LayoutParams(size, size).apply { marginEnd = dp(14) }
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(if (savedEnergySaving) COLOR_GREEN else COLOR_GRAY)
-            }
-        }
-        energySavingRow.addView(energyDot)
-
-        val esTextBlock = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        val esTitle = TextView(context).apply {
-            text = "Energy Saving"
-            setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText))
-            textSize = 15f
-        }
-        esTextBlock.addView(esTitle)
-        val esSub = TextView(context).apply {
-            text = "Pause VPN when app is in background"
-            setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText))
-            textSize = 12f
-        }
-        esTextBlock.addView(esSub)
-        energySavingRow.addView(esTextBlock)
-
-        energySavingSwitch = Switch(context).apply {
-            isChecked = savedEnergySaving
-            setOnCheckedChangeListener { _, isChecked ->
-                repository.setEnergySaving(isChecked)
-                val dotColor = if (isChecked) COLOR_GREEN else COLOR_GRAY
-                val bgColor = if (isChecked) COLOR_GREEN_BG else Theme.getColor(Theme.key_windowBackgroundGray)
-                (energyDot.background as? GradientDrawable)?.setColor(dotColor)
-                energySavingRow.background = makeRoundRect(dp(16), bgColor)
-            }
-        }
-        energySavingRow.addView(energySavingSwitch)
-        root.addView(energySavingRow)
 
         // ════════════════════ AUTO-SELECT ROW ════════════════════
         val autoSelectRow = LinearLayout(context).apply {
@@ -620,7 +568,7 @@ class VpnSettingsActivity : BaseFragment() {
             }
             is VpnProxyManager.ProxyState.Paused -> {
                 statusView.text = "Paused"
-                statusSubView.text = state.config.displayName + " \u00B7 Energy Saving"
+                statusSubView.text = state.config.displayName + " \u00B7 app in background"
                 statusSubView.visibility = View.VISIBLE
                 animateStatusDot(COLOR_GRAY)
                 animateStatusCard(COLOR_GRAY_BG)
