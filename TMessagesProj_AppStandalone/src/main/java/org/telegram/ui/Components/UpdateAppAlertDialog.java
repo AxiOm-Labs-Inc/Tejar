@@ -261,7 +261,7 @@ public class UpdateAppAlertDialog extends BottomSheet {
         textView.setTextColor(Theme.getColor(Theme.key_dialogTextBlack));
         textView.setSingleLine(true);
         textView.setEllipsize(TextUtils.TruncateAt.END);
-        textView.setText(ApplicationLoader.applicationContext.getResources().getString(R.string.AppUpdate));
+        textView.setText(LocaleController.getString(R.string.AppUpdate));
         linearLayout.addView(textView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.CENTER_HORIZONTAL, 23, 16, 23, 0));
 
         TextView messageTextView = new TextView(getContext());
@@ -414,7 +414,7 @@ public class UpdateAppAlertDialog extends BottomSheet {
         betaTitleView.setTextColor(Theme.getColor(Theme.key_dialogTextBlack));
         betaTitleView.setSingleLine(true);
         betaTitleView.setEllipsize(TextUtils.TruncateAt.END);
-        betaTitleView.setText(ApplicationLoader.applicationContext.getResources().getString(R.string.AppUpdate));
+        betaTitleView.setText(LocaleController.getString(R.string.AppUpdate));
         linearLayout.addView(betaTitleView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.CENTER_HORIZONTAL, 23, 16, 23, 0));
 
         TextView betaMessageView = new TextView(getContext());
