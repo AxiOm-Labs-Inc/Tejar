@@ -375,7 +375,10 @@ public class ApplicationLoader extends Application {
                 }
             });
 
-            if (vpnRepo.isVpnRunning()) {
+            // With Energy Saving the tunnel only runs while the app is visible. A process started
+            // in the background (FCM push, keep-alive service) never gets onBecameBackground, so
+            // starting here would leave the tunnel running; onBecameForeground starts it instead.
+            if (vpnRepo.isVpnRunning() && !vpnRepo.isEnergySaving()) {
                 com.telegram.vpncore.VpnConfig activeConfig = vpnRepo.getActive();
                 if (activeConfig != null) {
                     vpnManager.startProxy(activeConfig);  // listener will call enableProxy when ready
