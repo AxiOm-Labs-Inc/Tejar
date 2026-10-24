@@ -159,7 +159,8 @@ android {
         }
     }
 
-    defaultConfig.versionCode = Integer.parseInt(APP_VERSION_CODE)
+    // Tejar: Play versionCode follows the Tejar release, not the upstream Telegram base
+    defaultConfig.versionCode = Integer.parseInt(TEJAR_VERSION_CODE)
 
     applicationVariants.all { variant ->
         variant.outputs.all { output ->
@@ -178,7 +179,7 @@ android {
     defaultConfig {
         minSdkVersion 23
         targetSdkVersion 36
-        versionName APP_VERSION_NAME
+        versionName TEJAR_VERSION_NAME
         ndkVersion "27.2.12479018"
 
         multiDexEnabled true

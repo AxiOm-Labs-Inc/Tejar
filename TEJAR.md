@@ -31,6 +31,39 @@ builds, including offline ones, use the cache. A digest mismatch fails the build
 
 Distributed package: `com.tejar.messenger.web` (standalone flavor with `.web` suffix).
 
+## Google Play build
+
+Module `TMessagesProj_App` (package `com.tejar.messenger`, no suffix) is the Play build;
+`TMessagesProj_AppStandalone` (`com.tejar.messenger.web`) stays the website/GitHub build.
+
+```bash
+./gradlew.bat :TMessagesProj_App:bundleBundleAfatRelease
+# → TMessagesProj_App/build/outputs/bundle/bundleAfatRelease/*.aab
+```
+
+What differs from the standalone build:
+
+- **No self-update.** `GithubUpdaterController` exists only in the standalone module, and
+  `LaunchActivity.checkAppUpdate()` skips non-standalone builds — updates come from Play only.
+- **No Telegram Premium / Stars purchases** (`BuildVars.IS_BILLING_UNAVAILABLE = true` in
+  `TMessagesProj_App/.../ApplicationLoaderImpl.java`): a fork cannot sell them via Play Billing.
+- Version: `versionCode = TEJAR_VERSION_CODE * 10 + abiVersionCode`, `versionName = TEJAR_VERSION_NAME`.
+
+Before the first upload:
+
+- **Signing:** `TMessagesProj/config/release.keystore` in git is the upstream dummy key.
+  Use Play App Signing with your own upload key (keep it out of the repo, like the standalone key).
+- **App icon:** both builds still use the Telegram paper-plane icon
+  (`TMessagesProj/src/main/res/mipmap-*/ic_launcher*`, `icon_foreground*`). Telegram's API terms
+  forbid using their logo, and Play treats it as impersonation — replace before submitting.
+- **Xray child process:** `libxray.so` is bundled in the AAB (packaged with `useLegacyPackaging`),
+  not downloaded at runtime, so it is allowed by Play's policy on executable code.
+- **Play Console declarations:** `FOREGROUND_SERVICE_SPECIAL_USE` (vpn-core `ProxyForegroundService`)
+  needs the foreground-service declaration with a justification and a short video.
+  VpnService is not used, so the VPN declaration is not needed.
+- **Listing:** say "unofficial Telegram client"; do not use the names Telegram or sing-box
+  as the app name or in a way that implies endorsement.
+
 ## vpn-core module
 
 | Component | Role |
