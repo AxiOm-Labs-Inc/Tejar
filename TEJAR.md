@@ -3,7 +3,7 @@
 Fork of [Telegram for Android](https://github.com/DrKLO/Telegram) with an integrated VPN/proxy
 module (`vpn-core`) powered by [sing-box](https://github.com/SagerNet/sing-box).
 
-**Current release:** [v1.5.2](https://github.com/AxiOm-Labs-Inc/Tejar/releases/latest) — Telegram 12.10.0 base, sing-box core, Hysteria2 and NaiveProxy support.
+**Current release:** [v1.6.0](https://github.com/AxiOm-Labs-Inc/Tejar/releases/latest) — Telegram 13.0.3 base, sing-box core plus a bundled Xray core, subscriptions in any common format.
 
 ## Features
 
@@ -76,13 +76,20 @@ Two independent version pairs in `gradle.properties`:
 
 | Property | Current | Meaning |
 |---|---|---|
-| `APP_VERSION_*` | 12.10.0 / 7031 | Upstream Telegram base |
-| `TEJAR_VERSION_*` | 1.5.2 / 6977 | Tejar release (APK versionCode = `6977*10 + abiCode`) |
+| `APP_VERSION_*` | 13.0.3 / 7183 | Upstream Telegram base |
+| `TEJAR_VERSION_*` | 1.6.0 / 6979 | Tejar release (APK versionCode = `6979*10 + abiCode`) |
 
 The bundled cores are versioned separately: sing-box 1.13.19 (`libs/libbox.aar`, `SingBoxCore.VERSION`,
 sent as `SFA/<version>` to panels) and Xray-core v26.3.27 (`xrayVersion` in `vpn-core/build.gradle`).
 
 ## License
 
-Inherits GPL v2+ from upstream Telegram — see [LICENSE](LICENSE). The bundled Xray-core binary is MPL-2.0
-(see "Xray core" above).
+Tejar as a whole is distributed under the **GNU GPL v3** — see [LICENSE](LICENSE) and
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+- Upstream Telegram for Android is GPL v2 **or later**; the bundled sing-box core (`libbox`) is GPL v3
+  (with an extra condition on its name), so the combined work is GPL v3.
+- The Xray-core binary is shipped unmodified as a separate program under MPL 2.0 (see "Xray core" above).
+- Publish the matching source (a git tag) for every released build, including Play builds.
+- "Telegram" and the paper-plane logo belong to Telegram; Tejar is an unofficial client and must not
+  use Telegram's name as its own or its logo as the app icon.
