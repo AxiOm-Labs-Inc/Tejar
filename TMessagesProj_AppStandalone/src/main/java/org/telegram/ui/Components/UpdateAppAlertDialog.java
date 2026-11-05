@@ -261,7 +261,7 @@ public class UpdateAppAlertDialog extends BottomSheet {
         textView.setTextColor(Theme.getColor(Theme.key_dialogTextBlack));
         textView.setSingleLine(true);
         textView.setEllipsize(TextUtils.TruncateAt.END);
-        textView.setText(LocaleController.getString(R.string.AppUpdate));
+        textView.setText(LocaleController.getString(R.string.TejarAppUpdate));
         linearLayout.addView(textView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.CENTER_HORIZONTAL, 23, 16, 23, 0));
 
         TextView messageTextView = new TextView(getContext());
@@ -414,7 +414,7 @@ public class UpdateAppAlertDialog extends BottomSheet {
         betaTitleView.setTextColor(Theme.getColor(Theme.key_dialogTextBlack));
         betaTitleView.setSingleLine(true);
         betaTitleView.setEllipsize(TextUtils.TruncateAt.END);
-        betaTitleView.setText(LocaleController.getString(R.string.AppUpdate));
+        betaTitleView.setText(LocaleController.getString(R.string.TejarAppUpdate));
         linearLayout.addView(betaTitleView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.CENTER_HORIZONTAL, 23, 16, 23, 0));
 
         TextView betaMessageView = new TextView(getContext());
@@ -422,7 +422,7 @@ public class UpdateAppAlertDialog extends BottomSheet {
         betaMessageView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
         betaMessageView.setMovementMethod(new AndroidUtilities.LinkMovementMethodMy());
         betaMessageView.setLinkTextColor(Theme.getColor(Theme.key_dialogTextLink));
-        betaMessageView.setText(LocaleController.formatString(R.string.AppBetaUpdateVersion, betaUpdate.version, betaUpdate.versionCode));
+        betaMessageView.setText(LocaleController.formatString(R.string.AppBetaUpdateVersion, betaUpdate.version, betaUpdate.versionCode / 10));
         betaMessageView.setGravity(Gravity.CENTER_HORIZONTAL | Gravity.TOP);
         linearLayout.addView(betaMessageView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.CENTER_HORIZONTAL, 23, 0, 23, 5));
 

@@ -2,6 +2,7 @@
 <resources>
     <string name="AppName">Tejar</string>
     <string name="AppNameBeta">Tejar Beta</string>
+    <string name="TejarAppUpdate">Обновить Tejar</string>
     <string name="LanguageName">Русский</string>
     <string name="English">Английский</string>
     <string name="LanguageNameInEnglish">Russian</string>

@@ -7,6 +7,8 @@
     <string name="SettingsGithubReleases">GitHub Releases</string>
     <string name="SettingsCheckForUpdate">Check for update</string>
     <string name="SettingsUpToDate">You have the latest version</string>
+    <!-- Own key: Telegram's cloud language packs translate AppUpdate as "Update Telegram". -->
+    <string name="TejarAppUpdate">Update Tejar</string>
     <string name="SettingsUpdateCheckFailed">Couldn\'t check for updates. Try again later.</string>
     <string name="SettingsBetaUpdates">Beta versions</string>
     <string name="SettingsBetaUpdatesInfo">Also offer test builds before their stable release. They may contain bugs.</string>
