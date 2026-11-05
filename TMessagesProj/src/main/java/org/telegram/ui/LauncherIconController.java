@@ -35,11 +35,11 @@ public class LauncherIconController {
 
     public enum LauncherIcon {
         DEFAULT("DefaultIcon", R.mipmap.tejar_icon_background, R.mipmap.tejar_icon_foreground, R.string.AppIconDefault),
-        VINTAGE("VintageIcon", R.drawable.icon_6_background_sa, R.mipmap.icon_6_foreground_sa, R.string.AppIconVintage),
-        AQUA("AquaIcon", R.drawable.icon_4_background_sa, R.mipmap.icon_foreground_sa, R.string.AppIconAqua),
-        PREMIUM("PremiumIcon", R.drawable.icon_3_background_sa, R.mipmap.icon_3_foreground_sa, R.string.AppIconPremium, true),
-        TURBO("TurboIcon", R.drawable.icon_5_background_sa, R.mipmap.icon_5_foreground_sa, R.string.AppIconTurbo, true),
-        NOX("NoxIcon", R.mipmap.icon_2_background_sa, R.mipmap.icon_foreground_sa, R.string.AppIconNox, true);
+        VINTAGE("VintageIcon", R.mipmap.tejar_icon_vintage_background, R.mipmap.tejar_icon_vintage_foreground, R.string.AppIconVintage),
+        AQUA("AquaIcon", R.mipmap.tejar_icon_aqua_background, R.mipmap.tejar_icon_aqua_foreground, R.string.AppIconAqua),
+        PREMIUM("PremiumIcon", R.mipmap.tejar_icon_premium_background, R.mipmap.tejar_icon_premium_foreground, R.string.AppIconPremium, true),
+        TURBO("TurboIcon", R.mipmap.tejar_icon_turbo_background, R.mipmap.tejar_icon_turbo_foreground, R.string.AppIconTurbo, true),
+        NOX("NoxIcon", R.mipmap.tejar_icon_nox_background, R.mipmap.tejar_icon_nox_foreground, R.string.AppIconNox, true);
 
         public final String key;
         public final int background;
