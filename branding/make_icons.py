@@ -5,8 +5,9 @@
     python3 branding/make_icons.py        # run from the repository root
 
 Design: AxiOm's dark globe background and Omega, framed by a speech bubble (Tejar is the
-messenger of the AxiOm family). Colours follow the AxiOm client: #5BA3FF on a #1a1d3e -> #06070f
-radial gradient.
+messenger of the AxiOm family). The background is the AxiOm client's #1a1d3e -> #06070f radial
+gradient; the mark is teal #5DCAA5, the client's "connected" colour, so Tejar and AxiOm (blue
+#5BA3FF) never look alike on a home screen.
 
 Outputs (overwritten):
   - adaptive icon layers (API 26+): mipmap-*/tejar_icon_{background,foreground,monochrome}.png
@@ -25,7 +26,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RES = os.path.join(ROOT, "TMessagesProj", "src", "main", "res")
 RES_SA = os.path.join(ROOT, "TMessagesProj_AppStandalone", "src", "main", "res")
 
-ACCENT = "#5BA3FF"
+ACCENT = "#5DCAA5"  # AxiOm "connected" teal; AxiOm itself uses #5BA3FF
 
 OMEGA = ("M265.03 333.65Q283.64 330.01 294.02 310.87Q304.4 291.73 304.8 260.18V242.11Q304.8 210.97 291.73 194.39"
          "Q278.65 177.81 255.87 177.81Q233.08 177.81 220.14 194.66Q207.2 211.51 207.2 242.38V257.62Q207.2 289.97 "
