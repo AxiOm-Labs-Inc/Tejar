@@ -25,6 +25,7 @@ import org.telegram.messenger.browser.Browser;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Cells.TextCheckCell;
 
 public class AboutAppActivity extends BaseFragment implements NotificationCenter.NotificationCenterDelegate {
 
@@ -181,6 +182,21 @@ public class AboutAppActivity extends BaseFragment implements NotificationCenter
             checkUpdateButton.setOnClickListener(v -> doCheckForUpdate());
             root.addView(checkUpdateButton, marginParams(dp(8)));
 
+            // ── Beta channel: also offer GitHub pre-releases (read by GithubUpdaterController) ──
+            TextCheckCell betaCell = new TextCheckCell(context);
+            betaCell.setTextAndValueAndCheck(
+                    LocaleController.getString(R.string.SettingsBetaUpdates),
+                    LocaleController.getString(R.string.SettingsBetaUpdatesInfo),
+                    isBetaChannel(), true, false);
+            betaCell.setOnClickListener(v -> {
+                boolean enabled = !betaCell.isChecked();
+                betaCell.setChecked(enabled);
+                ApplicationLoader.applicationContext.getSharedPreferences(UPDATE_PREFS, Context.MODE_PRIVATE)
+                        .edit().putBoolean(KEY_BETA_CHANNEL, enabled).apply();
+                doCheckForUpdate();
+            });
+            root.addView(betaCell, marginParams(dp(4)));
+
             checkProgress = new ProgressBar(context);
             checkProgress.setVisibility(View.GONE);
             LinearLayout.LayoutParams progressParams = new LinearLayout.LayoutParams(dp(18), dp(18));
@@ -275,6 +291,15 @@ public class AboutAppActivity extends BaseFragment implements NotificationCenter
         } catch (Exception e) {
             return "";
         }
+    }
+
+    /** Shared with GithubUpdaterController (standalone module), which cannot be referenced from here. */
+    private static final String UPDATE_PREFS = "github_update";
+    private static final String KEY_BETA_CHANNEL = "beta_channel";
+
+    private static boolean isBetaChannel() {
+        return ApplicationLoader.applicationContext.getSharedPreferences(UPDATE_PREFS, Context.MODE_PRIVATE)
+                .getBoolean(KEY_BETA_CHANNEL, false);
     }
 
     private void doCheckForUpdate() {

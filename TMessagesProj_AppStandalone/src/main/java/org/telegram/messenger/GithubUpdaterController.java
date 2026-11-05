@@ -32,6 +32,10 @@ import java.util.regex.Pattern;
 public class GithubUpdaterController {
 
     private static final String RELEASES_URL = "https://api.github.com/repos/AxiOm-Labs-Inc/Tejar/releases/latest";
+    // Beta channel: /releases/latest skips pre-releases, so the list is scanned instead.
+    private static final String RELEASES_LIST_URL = "https://api.github.com/repos/AxiOm-Labs-Inc/Tejar/releases?per_page=20";
+    /** Set from the About screen (AboutAppActivity) in the same "github_update" preferences. */
+    private static final String KEY_BETA_CHANNEL = "beta_channel";
     // Tejar-<versionName>-<versionCode>-<arm64|armv7>-standalone.apk
     // A release carries one asset per ABI; pickAbiTag() selects the one this device can install.
     private static final Pattern ASSET_NAME_PATTERN = Pattern.compile(
@@ -127,29 +131,33 @@ public class GithubUpdaterController {
 
         checkingForUpdate = true;
         firstCheck = false;
+        final boolean beta = getSharedPreferences().getBoolean(KEY_BETA_CHANNEL, false);
+        final String url = beta ? RELEASES_LIST_URL : RELEASES_URL;
         new HttpGetTask(str -> AndroidUtilities.runOnUIThread(() -> {
             checkingForUpdate = false;
             lastCheck = System.currentTimeMillis();
             try {
                 if (str == null) throw new Exception("empty response");
-                final JSONObject json = new JSONObject(str);
-                final JSONArray assets = json.getJSONArray("assets");
-                String newVersion = null;
-                int newVersionCode = 0;
-                String newApkUrl = null;
                 final String abiTag = pickAbiTag();
-                for (int i = 0; i < assets.length(); i++) {
-                    final JSONObject asset = assets.getJSONObject(i);
-                    final String name = asset.optString("name", "");
-                    final Matcher m = ASSET_NAME_PATTERN.matcher(name);
-                    if (m.matches() && abiTag.equals(m.group(3))) {
-                        newVersion = m.group(1);
-                        newVersionCode = Integer.parseInt(m.group(2));
-                        newApkUrl = asset.optString("browser_download_url", null);
-                        break;
+                // Beta: the release with the highest versionCode for this ABI, pre-releases included.
+                ReleaseApk best = null;
+                if (beta) {
+                    final JSONArray releases = new JSONArray(str);
+                    for (int i = 0; i < releases.length(); i++) {
+                        final JSONObject release = releases.getJSONObject(i);
+                        if (release.optBoolean("draft", false)) continue;
+                        final ReleaseApk apk = findApk(release, abiTag);
+                        if (apk != null && (best == null || apk.versionCode > best.versionCode)) {
+                            best = apk;
+                        }
                     }
+                } else {
+                    best = findApk(new JSONObject(str), abiTag);
                 }
-                final String newChangelog = json.optString("body", null);
+                final String newVersion = best != null ? best.version : null;
+                final int newVersionCode = best != null ? best.versionCode : 0;
+                final String newApkUrl = best != null ? best.url : null;
+                final String newChangelog = best != null ? best.changelog : null;
 
                 if (newApkUrl != null && newApkUrl.startsWith("https://") && newVersionCode > getCurrentVersionCode()) {
                     if (newVersionCode != versionCode) {
@@ -175,13 +183,38 @@ public class GithubUpdaterController {
                 }
                 save();
             } catch (Exception e) {
-                FileLog.e("GithubUpdaterController: failed to check " + RELEASES_URL, e);
+                FileLog.e("GithubUpdaterController: failed to check " + url, e);
             }
             if (whenDone != null) whenDone.run();
         }))
             .setHeader("Accept", "application/vnd.github+json")
             .setHeader("User-Agent", "Tejar-Android/" + getCurrentVersionName())
-            .execute(RELEASES_URL);
+            .execute(url);
+    }
+
+    private static final class ReleaseApk {
+        String version;
+        int versionCode;
+        String url;
+        String changelog;
+    }
+
+    /** The APK asset of [release] for [abiTag], or null if the release has none. */
+    private static ReleaseApk findApk(JSONObject release, String abiTag) throws Exception {
+        final JSONArray assets = release.getJSONArray("assets");
+        for (int i = 0; i < assets.length(); i++) {
+            final JSONObject asset = assets.getJSONObject(i);
+            final Matcher m = ASSET_NAME_PATTERN.matcher(asset.optString("name", ""));
+            if (m.matches() && abiTag.equals(m.group(3))) {
+                final ReleaseApk apk = new ReleaseApk();
+                apk.version = m.group(1);
+                apk.versionCode = Integer.parseInt(m.group(2));
+                apk.url = asset.optString("browser_download_url", null);
+                apk.changelog = release.optString("body", null);
+                return apk;
+            }
+        }
+        return null;
     }
 
     /** True while a discovered release hasn't been announced to the user yet. */
