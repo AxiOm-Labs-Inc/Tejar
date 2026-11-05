@@ -413,8 +413,9 @@ public class ApplicationLoader extends Application {
                     // long-backgrounded app is exactly when the list is likely stale.
                     com.telegram.vpncore.SubscriptionUpdater.INSTANCE.refreshStaleAsync(applicationContext);
                     if (!vpnRepo.isVpnRunning()) return;
-                    com.telegram.vpncore.VpnConfig config = vpnRepo.getActive();
-                    if (config != null && !vpnManager.isRunning()) {
+                    // Always called, even while Connected/Connecting: it also cancels a pause
+                    // queued by onBecameBackground, and is a no-op for a tunnel that is up.
+                    if (vpnRepo.getActive() != null) {
                         vpnManager.resumeProxy();  // fast path after a background pause
                     }
                 }

@@ -111,6 +111,9 @@ class VpnProxyManager private constructor(private val context: Context) {
     @Volatile
     private var pauseRequested = false
 
+    /** Bumped by every pause/resume request; a queued pause runs only if it is still the latest. */
+    private val lifecycleGeneration = java.util.concurrent.atomic.AtomicInteger()
+
     // ── xray (second core, separate process) ──
     // Servers sing-box cannot speak (xhttp, mKCP, ...) run in one xray child process; each is
     // reached by sing-box over its own local SOCKS inbound. All of this is guarded by [mutex].
@@ -272,6 +275,10 @@ class VpnProxyManager private constructor(private val context: Context) {
      * instead of a full cold start.
      */
     fun resumeProxy() {
+        // Cancel a pause that is still queued or aborting a connect, so a quick
+        // background → foreground switch cannot leave the tunnel Paused in the foreground.
+        lifecycleGeneration.incrementAndGet()
+        pauseRequested = false
         scope.launch {
             mutex.withLock {
                 when (_state.value) {
@@ -306,8 +313,11 @@ class VpnProxyManager private constructor(private val context: Context) {
      */
     fun pauseProxy() {
         pauseRequested = true
+        val generation = lifecycleGeneration.incrementAndGet()
         scope.launch {
             mutex.withLock {
+                // The app came back before this ran: a later resumeProxy() supersedes the pause.
+                if (generation != lifecycleGeneration.get()) return@launch
                 pauseProxyInternal()
                 pauseRequested = false
             }
