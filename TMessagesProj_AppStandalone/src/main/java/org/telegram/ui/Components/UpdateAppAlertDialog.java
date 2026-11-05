@@ -432,7 +432,7 @@ public class UpdateAppAlertDialog extends BottomSheet {
             betaChangelogView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
             betaChangelogView.setMovementMethod(new AndroidUtilities.LinkMovementMethodMy());
             betaChangelogView.setLinkTextColor(Theme.getColor(Theme.key_dialogTextLink));
-            betaChangelogView.setText(Emoji.replaceEmoji(betaUpdate.changelog, betaChangelogView.getPaint().getFontMetricsInt(), false));
+            betaChangelogView.setText(Emoji.replaceEmoji(betaUpdate.formattedChangelog(), betaChangelogView.getPaint().getFontMetricsInt(), false));
             NotificationCenter.listenEmojiLoading(betaChangelogView);
             betaChangelogView.setGravity(Gravity.LEFT | Gravity.TOP);
             linearLayout.addView(betaChangelogView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.LEFT | Gravity.TOP, 23, 15, 23, 0));

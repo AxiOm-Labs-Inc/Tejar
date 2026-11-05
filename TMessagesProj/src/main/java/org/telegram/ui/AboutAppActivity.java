@@ -35,6 +35,8 @@ public class AboutAppActivity extends BaseFragment implements NotificationCenter
     private static final int COLOR_ACCENT_BG = 0x1A6C5CE7;
     private static final int COLOR_GREEN = 0xFF4CAF50;
     private static final int COLOR_GREEN_BG = 0x1A4CAF50;
+    private static final int COLOR_RED = 0xFFE53935;
+    private static final int COLOR_RED_BG = 0x1AE53935;
 
     private TextView checkResultText;
     private LinearLayout checkUpdateButton;
@@ -49,6 +51,7 @@ public class AboutAppActivity extends BaseFragment implements NotificationCenter
     private TextView downloadProgressText;
 
     private boolean checking;
+    private boolean recheckPending;
 
     private int dp(int v) {
         return AndroidUtilities.dp(v);
@@ -303,7 +306,12 @@ public class AboutAppActivity extends BaseFragment implements NotificationCenter
     }
 
     private void doCheckForUpdate() {
-        if (checking || ApplicationLoader.applicationLoaderInstance == null) {
+        if (ApplicationLoader.applicationLoaderInstance == null) {
+            return;
+        }
+        if (checking) {
+            // e.g. the beta switch flipped again: check once more when this one ends
+            recheckPending = true;
             return;
         }
         checking = true;
@@ -319,6 +327,11 @@ public class AboutAppActivity extends BaseFragment implements NotificationCenter
             checkUpdateButton.setEnabled(true);
             checkUpdateButton.setAlpha(1f);
             checkProgress.setVisibility(View.GONE);
+            if (recheckPending) {
+                recheckPending = false;
+                doCheckForUpdate();
+                return;
+            }
             refreshUpdateBlock(true);
         }));
     }
@@ -331,7 +344,7 @@ public class AboutAppActivity extends BaseFragment implements NotificationCenter
         if (update != null) {
             updateBlock.setVisibility(View.VISIBLE);
             updateVersionText.setText(LocaleController.formatString("SettingsUpdateVersionAvailable", R.string.SettingsUpdateVersionAvailable, update.version));
-            updateChangelogText.setText(update.changelog != null ? update.changelog : "");
+            updateChangelogText.setText(update.formattedChangelog());
             updateChangelogText.setVisibility(update.changelog != null && !update.changelog.isEmpty() ? View.VISIBLE : View.GONE);
             if (checkResultText != null) {
                 checkResultText.setVisibility(View.GONE);
@@ -348,7 +361,10 @@ public class AboutAppActivity extends BaseFragment implements NotificationCenter
         } else {
             updateBlock.setVisibility(View.GONE);
             if (afterManualCheck && checkResultText != null) {
-                checkResultText.setText(LocaleController.getString(R.string.SettingsUpToDate));
+                final boolean failed = ApplicationLoader.applicationLoaderInstance.isLastUpdateCheckFailed();
+                checkResultText.setText(LocaleController.getString(failed ? R.string.SettingsUpdateCheckFailed : R.string.SettingsUpToDate));
+                checkResultText.setTextColor(failed ? COLOR_RED : COLOR_GREEN);
+                checkResultText.setBackground(makeRoundRect(dp(12), failed ? COLOR_RED_BG : COLOR_GREEN_BG));
                 checkResultText.setVisibility(View.VISIBLE);
             }
         }

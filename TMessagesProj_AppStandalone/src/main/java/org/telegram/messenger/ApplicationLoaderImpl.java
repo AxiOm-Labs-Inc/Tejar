@@ -131,6 +131,11 @@ public class ApplicationLoaderImpl extends ApplicationLoader {
     }
 
     @Override
+    public boolean isLastUpdateCheckFailed() {
+        return GithubUpdaterController.getInstance().isLastCheckFailed();
+    }
+
+    @Override
     public void downloadUpdate() {
         GithubUpdaterController.getInstance().downloadUpdate();
     }

@@ -115,10 +115,29 @@ public class GithubUpdaterController {
 
     private boolean firstCheck = true;
     private boolean checkingForUpdate;
+    private boolean lastCheckFailed;
+    // A forced check requested while another one runs (e.g. the beta switch flipped twice):
+    // it runs right after, so the result matches the current settings.
+    private boolean recheckPending;
+    private Runnable recheckWhenDone;
+
+    /** True if the last check could not reach GitHub or parse its answer. */
+    public boolean isLastCheckFailed() {
+        return lastCheckFailed;
+    }
 
     public void checkForUpdate(boolean force, Runnable whenDone) {
         if (checkingForUpdate) {
-            if (whenDone != null) whenDone.run();
+            if (force) {
+                recheckPending = true;
+                final Runnable previous = recheckWhenDone;
+                recheckWhenDone = previous == null ? whenDone : whenDone == null ? previous : () -> {
+                    previous.run();
+                    whenDone.run();
+                };
+            } else if (whenDone != null) {
+                whenDone.run();
+            }
             return;
         }
         if (firstCheck) {
@@ -182,10 +201,18 @@ public class GithubUpdaterController {
                     path = null;
                 }
                 save();
+                lastCheckFailed = false;
             } catch (Exception e) {
+                lastCheckFailed = true;
                 FileLog.e("GithubUpdaterController: failed to check " + url, e);
             }
             if (whenDone != null) whenDone.run();
+            if (recheckPending) {
+                recheckPending = false;
+                final Runnable next = recheckWhenDone;
+                recheckWhenDone = null;
+                checkForUpdate(true, next);
+            }
         }))
             .setHeader("Accept", "application/vnd.github+json")
             .setHeader("User-Agent", "Tejar-Android/" + getCurrentVersionName())

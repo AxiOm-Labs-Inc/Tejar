@@ -7,6 +7,7 @@
     <string name="SettingsGithubReleases">GitHub Releases</string>
     <string name="SettingsCheckForUpdate">Check for update</string>
     <string name="SettingsUpToDate">You have the latest version</string>
+    <string name="SettingsUpdateCheckFailed">Couldn\'t check for updates. Try again later.</string>
     <string name="SettingsBetaUpdates">Beta versions</string>
     <string name="SettingsBetaUpdatesInfo">Also offer test builds before their stable release. They may contain bugs.</string>
     <string name="SettingsUpdateVersionAvailable">Version %1$s available</string>

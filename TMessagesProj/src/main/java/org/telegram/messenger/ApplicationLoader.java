@@ -798,6 +798,10 @@ public class ApplicationLoader extends Application {
         return 0.0f;
     }
     public void checkUpdate(boolean force, Runnable whenDone) {}
+
+    public boolean isLastUpdateCheckFailed() {
+        return false;
+    }
     public BetaUpdate getUpdate() {
         return null;
     }
