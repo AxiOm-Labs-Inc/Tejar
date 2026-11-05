@@ -32,8 +32,9 @@ public class BuildVars {
     public static String APP_HASH = BuildConfig.TG_APP_HASH;
 
     // SafetyNet key for Google Identity SDK, set it to empty to disable
-    public static String SAFETYNET_KEY = "AIzaSyDqt8P-7F7CPCseMkOiVRgb1LY8RN1bvH8";
-    public static String PLAYSTORE_APP_URL = "https://play.google.com/store/apps/details?id=org.telegram.messenger";
+    // Tejar: the upstream key belongs to the official Telegram app; empty disables SafetyNet
+    public static String SAFETYNET_KEY = "";
+    public static String PLAYSTORE_APP_URL = "https://play.google.com/store/apps/details?id=com.tejar.messenger";
     public static String HUAWEI_STORE_URL = "https://appgallery.huawei.com/app/C101184875";
     public static String GOOGLE_AUTH_CLIENT_ID = "760348033671-81kmi3pi84p11ub8hp9a1funsv0rn2p9.apps.googleusercontent.com";
 
