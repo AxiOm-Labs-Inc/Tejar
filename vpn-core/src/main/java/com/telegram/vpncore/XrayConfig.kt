@@ -67,7 +67,7 @@ object XrayConfigBuilder {
 
     /** The server's xray outbound with our tag and IPv4-only name resolution. */
     fun outboundFor(server: VpnConfig, tag: String): JSONObject {
-        val o = JSONObject(server.rawOutbound)
+        val o = XrayOutbounds.migrate(JSONObject(server.rawOutbound))
         o.put("tag", tag)
         val stream = o.optJSONObject("streamSettings") ?: JSONObject().also { o.put("streamSettings", it) }
         val sockopt = stream.optJSONObject("sockopt") ?: JSONObject().also { stream.put("sockopt", it) }

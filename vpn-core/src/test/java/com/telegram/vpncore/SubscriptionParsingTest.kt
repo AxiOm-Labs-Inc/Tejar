@@ -154,5 +154,5 @@ class SubscriptionParsingTest {
 
     @Test fun garbageYieldsNothing() = assertTrue(SubscriptionFetcher.parseSubscription("hello\nworld").isEmpty)
 
-    @Test fun userAgentFollowsBundledCore() = assertEquals("1.13.19", SingBoxCore.VERSION)
+    @Test fun userAgentFollowsBundledCore() = assertEquals("1.14.4", SingBoxCore.VERSION)
 }

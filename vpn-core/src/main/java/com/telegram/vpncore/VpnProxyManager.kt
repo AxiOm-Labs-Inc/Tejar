@@ -466,6 +466,9 @@ class VpnProxyManager private constructor(private val context: Context) {
             startWatchdog()
         } catch (e: Exception) {
             Log.w(TAG, "Fast resume failed, falling back to full restart", e)
+            // close() alone does not stop the running sing-box instance: it would keep the
+            // SOCKS port and the cold start would fail with "address already in use".
+            runCatching { server.closeService() }
             runCatching { server.close() }
             commandServer = null
             cachedJsonConfig = null
@@ -682,6 +685,14 @@ class VpnProxyManager private constructor(private val context: Context) {
     private suspend fun startCore(jsonConfig: String, config: VpnConfig) {
         ensureCoreSetup()
 
+        // A warm server left from a pause (resume without a cached config goes cold) must not
+        // be overwritten while still alive: release it and its instance first.
+        commandServer?.let { old ->
+            runCatching { old.closeService() }
+            runCatching { old.close() }
+            commandServer = null
+        }
+
         Libbox.checkConfig(jsonConfig)
 
         val server = CommandServer(
@@ -692,6 +703,8 @@ class VpnProxyManager private constructor(private val context: Context) {
         try {
             server.startOrReloadService(jsonConfig, OverrideOptions())
         } catch (e: Exception) {
+            // A start that failed half-way may already hold the SOCKS port.
+            try { server.closeService() } catch (_: Exception) {}
             try { server.close() } catch (_: Exception) {}
             throw e
         }

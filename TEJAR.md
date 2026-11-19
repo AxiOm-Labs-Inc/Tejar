@@ -43,7 +43,7 @@ Distributed package: `com.tejar.messenger.web` (standalone flavor with `.web` su
 | `VpnProxyManager.kt` | Orchestrates proxy start/stop and Telegram bridge |
 | `LinkParser.kt`, `ClashSubscriptionParser.kt`, `XrayJsonParser.kt`, `Sip008Parser.kt` | Subscription formats -> servers (+ skip reasons) |
 | `XrayOutbounds.kt`, `XrayConfig.kt`, `XrayProcess.kt` | Xray core: outbound conversion, process config, child process |
-| `libs/libbox.aar` | sing-box core (~93 MB) |
+| `libs/libbox.aar` | sing-box core, arm64 + armv7 only (~53 MB; GitHub rejects files over 100 MB) |
 
 Parser unit tests (`./gradlew :vpn-core:testDebugUnitTest`) run on a plain JVM.
 
@@ -65,9 +65,9 @@ in-process core and the only thing Telegram talks to.
   restarted once if it dies while connected.
 - No geoip/geosite data is shipped; xray gets explicit DNS servers and resolves IPv4 only.
 
-**Licence notice.** The bundled binary is [Xray-core](https://github.com/XTLS/Xray-core) v26.3.27 from the
+**Licence notice.** The bundled binary is [Xray-core](https://github.com/XTLS/Xray-core) v26.11.9 from the
 unmodified upstream release, licensed under the Mozilla Public License 2.0. Source:
-<https://github.com/XTLS/Xray-core/tree/v26.3.27>. To update, change `xrayVersion` and the pinned digests
+<https://github.com/XTLS/Xray-core/tree/v26.11.9>. To update, change `xrayVersion` and the pinned digests
 (from the release's `.zip.dgst` files) in `vpn-core/build.gradle`.
 
 ## Versioning
@@ -79,8 +79,20 @@ Two independent version pairs in `gradle.properties`:
 | `APP_VERSION_*` | 13.0.3 / 7183 | Upstream Telegram base |
 | `TEJAR_VERSION_*` | 1.6.0 / 6979 | Tejar release (APK versionCode = `6979*10 + abiCode`) |
 
-The bundled cores are versioned separately: sing-box 1.13.19 (`libs/libbox.aar`, `SingBoxCore.VERSION`,
-sent as `SFA/<version>` to panels) and Xray-core v26.3.27 (`xrayVersion` in `vpn-core/build.gradle`).
+The bundled cores are versioned separately: sing-box 1.14.4 (`libs/libbox.aar`, `SingBoxCore.VERSION`,
+sent as `SFA/<version>` to panels) and Xray-core v26.11.9 (`xrayVersion` in `vpn-core/build.gradle`).
+
+`libbox.aar` is not published upstream; it is built from the sing-box tag with sagernet gomobile
+(the version in sing-box's `Makefile`, `lib_install`) and the Go version sing-box's CI uses (1.26.x;
+Go 1.27 rejects cronet's `-l:libcronet.a` cgo flag). Tejar's minSdk is 23, so `gomobile bind` is run
+directly instead of `make lib_android` (which targets API 24):
+
+```
+gomobile bind -o libbox.aar -target android/arm,android/arm64 -androidapi 23 -javapkg=io.nekohasekai -libname=box \
+  -trimpath -buildvcs=false -tags <sharedTags from cmd/internal/build_libbox, without usbip/openvpn/openconnect> \
+  -ldflags "-X github.com/sagernet/sing-box/constant.Version=<ver> -X runtime.godebugDefault=multipathtcp=0,tlssha1=1 -checklinkname=0 -s -w -buildid=" \
+  ./experimental/libbox
+```
 
 ## License
 

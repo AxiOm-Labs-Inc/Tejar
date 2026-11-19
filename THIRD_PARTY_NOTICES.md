@@ -12,8 +12,8 @@ The combined application is distributed under the **GNU General Public License v
 | Component | Where | License | Source |
 |---|---|---|---|
 | Telegram for Android | `TMessagesProj*` | GPL v2 or later ([upstream text](licenses/GPL-2.0-Telegram-upstream.txt)) — used here under GPL v3 | <https://github.com/DrKLO/Telegram> |
-| sing-box (`libbox`) | `vpn-core/libs/libbox.aar` | GPL v3 or later, with an additional condition: no derivative work may use the name "sing-box" or imply association with it without prior consent | <https://github.com/SagerNet/sing-box> (v1.13.19) |
-| Xray-core | `libxray.so`, unmodified upstream binary, run as a separate process | Mozilla Public License 2.0 ([text](licenses/MPL-2.0.txt)) | <https://github.com/XTLS/Xray-core/tree/v26.3.27> |
+| sing-box (`libbox`) | `vpn-core/libs/libbox.aar` | GPL v3 or later, with an additional condition: no derivative work may use the name "sing-box" or imply association with it without prior consent | <https://github.com/SagerNet/sing-box> (v1.14.4) |
+| Xray-core | `libxray.so`, unmodified upstream binary, run as a separate process | Mozilla Public License 2.0 ([text](licenses/MPL-2.0.txt)) | <https://github.com/XTLS/Xray-core/tree/v26.11.9> |
 | SnakeYAML | `vpn-core` dependency | Apache 2.0 ([text](licenses/Apache-2.0.txt)) | <https://bitbucket.org/snakeyaml/snakeyaml> |
 | Kotlin coroutines | `vpn-core` dependency | Apache 2.0 | <https://github.com/Kotlin/kotlinx.coroutines> |
 | AndroidX (core-ktx, security-crypto) | `vpn-core` dependency | Apache 2.0 | <https://android.googlesource.com/platform/frameworks/support> |

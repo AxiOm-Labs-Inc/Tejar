@@ -3,6 +3,7 @@ package com.telegram.vpncore
 import android.content.Context
 import android.system.Os
 import android.util.Log
+import org.json.JSONObject
 import java.io.File
 import java.net.InetSocketAddress
 import java.net.ServerSocket
@@ -34,7 +35,11 @@ class XrayProcess(private val context: Context, private val onExit: (Int) -> Uni
         fun assignEndpoints(servers: List<VpnConfig>): Map<String, XrayEndpoint> {
             val random = SecureRandom()
             fun token() = ByteArray(12).also(random::nextBytes).joinToString("") { "%02x".format(it) }
-            return servers.filter(XrayConfigBuilder::isXray).associate { it.id to XrayEndpoint(freePort(), token(), token()) }
+            // Servers xray would refuse (plain VLESS/Trojan, saved before xray banned them)
+            // are left out here: one of them would stop the process for every other server.
+            return servers.filter(XrayConfigBuilder::isXray)
+                .filterNot { runCatching { XrayOutbounds.refusesPlaintext(JSONObject(it.rawOutbound)) }.getOrDefault(false) }
+                .associate { it.id to XrayEndpoint(freePort(), token(), token()) }
         }
 
         private fun freePort(): Int = ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1")).use { it.localPort }

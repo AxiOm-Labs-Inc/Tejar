@@ -38,7 +38,7 @@ object XrayOutbounds {
         val stream = stream(
             network = q("type") ?: "tcp", security = security,
             sni = q("sni") ?: q("peer"), host = q("host"), path = q("path"),
-            fingerprint = q("fp"), alpn = q("alpn"), insecure = isTrue(q("allowInsecure") ?: q("insecure")),
+            fingerprint = q("fp"), alpn = q("alpn"), pinnedCertSha256 = q("pcs"), verifyCertByName = q("vcn"),
             publicKey = q("pbk"), shortId = q("sid"), spiderX = q("spx"),
             serviceName = q("serviceName"), headerType = q("headerType"), seed = q("seed"),
             mode = q("mode"), extra = q("extra"),
@@ -69,7 +69,7 @@ object XrayOutbounds {
             network = net, security = if (s("tls") == "tls") "tls" else "none",
             sni = s("sni") ?: s("host"), host = s("host"), path = s("path"),
             fingerprint = s("fp"), alpn = s("alpn"),
-            insecure = isTrue(s("allowInsecure") ?: s("insecure")),
+            pinnedCertSha256 = s("pcs"), verifyCertByName = s("vcn"),
             publicKey = null, shortId = null, spiderX = null,
             serviceName = if (net == "grpc") s("path") else null,
             headerType = s("type"), seed = if (net == "kcp") s("path") else null,
@@ -132,7 +132,6 @@ object XrayOutbounds {
             sni = s("servername") ?: s("sni"), host = hostHeader, path = path,
             fingerprint = s("client-fingerprint"),
             alpn = proxy.optJSONArray("alpn")?.let { a -> (0 until a.length()).joinToString(",") { a.getString(it) } },
-            insecure = proxy.optBoolean("skip-cert-verify", false),
             publicKey = reality?.optString("public-key"), shortId = reality?.optString("short-id"),
             spiderX = null,
             serviceName = proxy.optJSONObject("grpc-opts")?.optString("grpc-service-name"),
@@ -190,7 +189,59 @@ object XrayOutbounds {
         o.optJSONObject("streamSettings")?.optJSONObject("sockopt")?.let {
             it.remove("dialerProxy")
         }
-        return o
+        return migrate(o)
+    }
+
+    /**
+     * Brings an outbound written for an older xray up to date, in place: mKCP mask ids and
+     * "allowInsecure" (see [migrateFinalmask], [migrateTls]). Also applied to stored servers
+     * when the process config is built, so servers saved by earlier versions keep working.
+     */
+    fun migrate(outbound: JSONObject): JSONObject {
+        outbound.optJSONObject("streamSettings")?.let { st ->
+            st.optJSONObject("finalmask")?.let { migrateFinalmask(it) }
+            st.optJSONObject("tlsSettings")?.let { migrateTls(it) }
+        }
+        return outbound
+    }
+
+    /**
+     * xray refuses VLESS (without VLESS encryption) and Trojan without TLS/REALITY to a public
+     * address, and one such outbound fails the whole process config. Mirrors xray's
+     * `validateOutboundTransportSecurity` so such servers can be left out individually.
+     */
+    fun refusesPlaintext(outbound: JSONObject): Boolean {
+        val protocol = outbound.optString("protocol").lowercase()
+        if (protocol != "vless" && protocol != "trojan") return false
+        val security = outbound.optJSONObject("streamSettings")?.optString("security").orEmpty().lowercase()
+        if (security.isNotEmpty() && security != "none") return false
+        if (protocol == "vless") {
+            val settings = outbound.optJSONObject("settings") ?: JSONObject()
+            val encryption = settings.optJSONArray("vnext")?.optJSONObject(0)?.optJSONArray("users")
+                ?.optJSONObject(0)?.optString("encryption") ?: settings.optString("encryption")
+            if (encryption.isNotEmpty() && encryption != "none") return false
+        }
+        val address = runCatching { endpointOf(outbound).first }.getOrNull() ?: return true
+        return !isPrivateAddress(address)
+    }
+
+    private val PRIVATE_SUFFIXES = listOf("lan", "localdomain", "example", "invalid", "localhost", "test", "local", "home.arpa", "internal")
+
+    /** xray's private IP / domain test, for literals and names only (no DNS lookup). */
+    internal fun isPrivateAddress(address: String): Boolean {
+        val a = address.trim().trimEnd('.').removePrefix("[").removeSuffix("]").lowercase()
+        val v4 = a.split('.').takeIf { p -> p.size == 4 && p.all { it.toIntOrNull() in 0..255 } }?.map { it.toInt() }
+        if (v4 != null) {
+            return v4[0] == 10 || v4[0] == 127 || (v4[0] == 172 && v4[1] in 16..31) ||
+                (v4[0] == 192 && v4[1] == 168) || (v4[0] == 169 && v4[1] == 254)
+        }
+        if (':' in a) {
+            val ip = runCatching { java.net.InetAddress.getByName(a) }.getOrNull() ?: return false
+            val first = ip.address[0].toInt() and 0xff
+            return ip.isLoopbackAddress || ip.isLinkLocalAddress || (first and 0xfe) == 0xfc
+        }
+        if ('.' !in a) return true // dotless names are local
+        return PRIVATE_SUFFIXES.any { a == it || a.endsWith(".$it") }
     }
 
     // ───────────────────────────── shared ─────────────────────────────
@@ -206,24 +257,59 @@ object XrayOutbounds {
         return address to port
     }
 
-    /** mKCP header and seed as xray 26.x UDP finalmask layers (see [stream]). */
+    /**
+     * mKCP header and seed as UDP finalmask layers. Since xray 26.10 they are both
+     * "mkcp-legacy" masks: the header next to the wire, then the cipher (the old default
+     * "original", or AES-GCM when a seed was set) around the KCP payload.
+     */
     private fun kcpFinalmask(headerType: String?, seed: String?, domain: String?): JSONObject {
         val masks = JSONArray()
         when (val h = headerType?.lowercase() ?: "none") {
             "none" -> {}
-            "srtp", "utp", "dtls", "wireguard" -> masks.put(JSONObject().put("type", "header-$h"))
-            "wechat-video" -> masks.put(JSONObject().put("type", "header-wechat"))
-            "dns" -> masks.put(JSONObject().put("type", "header-dns").put("settings", JSONObject().apply {
-                domain?.let { put("domain", it) }
-            }))
+            "srtp", "utp", "dtls", "wireguard" -> masks.put(legacyMask(h, null))
+            "wechat-video" -> masks.put(legacyMask("wechat", null))
+            "dns" -> masks.put(legacyMask("dns", domain))
             else -> throw IllegalArgumentException("unknown mKCP header")
         }
-        masks.put(
-            if (seed != null) JSONObject().put("type", "mkcp-aes128gcm")
-                .put("settings", JSONObject().put("password", seed))
-            else JSONObject().put("type", "mkcp-original")
-        )
+        masks.put(legacyMask(null, seed))
         return JSONObject().put("udp", masks)
+    }
+
+    private fun legacyMask(header: String?, value: String?) = JSONObject().put("type", "mkcp-legacy")
+        .put("settings", JSONObject().apply {
+            header?.let { put("header", it) }
+            value?.let { put("value", it) }
+        })
+
+    /**
+     * Rewrites xray 26.3–26.9 mKCP mask ids (header-*, mkcp-original, mkcp-aes128gcm), which
+     * newer xray rejects, as the equivalent "mkcp-legacy" masks. The wire format is the same.
+     */
+    private fun migrateFinalmask(finalmask: JSONObject): JSONObject {
+        val udp = finalmask.optJSONArray("udp") ?: return finalmask
+        for (i in 0 until udp.length()) {
+            val mask = udp.optJSONObject(i) ?: continue
+            val settings = mask.optJSONObject("settings")
+            val replacement = when (val type = mask.optString("type").lowercase()) {
+                "mkcp-original" -> legacyMask(null, null)
+                "mkcp-aes128gcm" -> legacyMask(null, settings?.optString("password")?.takeIf { it.isNotEmpty() })
+                "header-dns" -> legacyMask("dns", settings?.optString("domain")?.takeIf { it.isNotEmpty() })
+                "header-dtls", "header-srtp", "header-utp", "header-wechat", "header-wireguard" ->
+                    legacyMask(type.removePrefix("header-"), null)
+                else -> null
+            }
+            replacement?.let { udp.put(i, it) }
+        }
+        return finalmask
+    }
+
+    /**
+     * xray removed "allowInsecure" (a config holding it fails to load, taking every xray
+     * server down with it). The replacements are pinning the certificate hash ("pcs") or
+     * accepting another name ("vcn"); without them the server gets normal verification.
+     */
+    private fun migrateTls(tls: JSONObject) {
+        tls.remove("allowInsecure")
     }
 
     private fun vnext(host: String, port: Int, user: JSONObject) =
@@ -233,7 +319,7 @@ object XrayOutbounds {
 
     private fun stream(
         network: String, security: String, sni: String?, host: String?, path: String?,
-        fingerprint: String?, alpn: String?, insecure: Boolean,
+        fingerprint: String?, alpn: String?, pinnedCertSha256: String? = null, verifyCertByName: String? = null,
         publicKey: String?, shortId: String?, spiderX: String?,
         serviceName: String?, headerType: String?, seed: String?, mode: String?, extra: String?,
         finalmask: String? = null, mtu: String? = null, tti: String? = null
@@ -253,7 +339,8 @@ object XrayOutbounds {
         when (security) {
             "tls" -> s.put("tlsSettings", JSONObject().apply {
                 sni?.let { put("serverName", it) }
-                if (insecure) put("allowInsecure", true)
+                pinnedCertSha256?.let { put("pinnedPeerCertSha256", it) }
+                verifyCertByName?.let { put("verifyPeerCertByName", it) }
                 alpn?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.takeIf { it.isNotEmpty() }
                     ?.let { put("alpn", JSONArray(it)) }
                 fingerprint?.let { put("fingerprint", it) }
@@ -310,7 +397,7 @@ object XrayOutbounds {
             }
         }
         // `fm` share-link parameter: the finalmask object, as JSON.
-        finalmask?.let { s.put("finalmask", JSONObject(it)) }
+        finalmask?.let { s.put("finalmask", migrateFinalmask(JSONObject(it))) }
         return s
     }
 }

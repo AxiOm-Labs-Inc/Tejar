@@ -8,5 +8,5 @@ object SingBoxCore {
      * strings, identical across ABIs). A constant rather than a runtime call: the User-Agent is
      * needed before the native library is loaded. Update together with libbox.aar.
      */
-    const val VERSION = "1.13.19"
+    const val VERSION = "1.14.4"
 }

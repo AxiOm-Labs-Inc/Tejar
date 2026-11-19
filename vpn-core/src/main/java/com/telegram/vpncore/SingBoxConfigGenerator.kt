@@ -115,6 +115,12 @@ object SingBoxConfigGenerator {
         // so "geoip:private" would fail to load.
         root.put("route", JSONObject().apply {
             put("final", "proxy")
+            // Server hostnames are resolved with the direct DNS server below (required since
+            // sing-box 1.14; earlier versions picked it implicitly).
+            put("default_domain_resolver", JSONObject().apply {
+                put("server", "bootstrap")
+                put("strategy", "prefer_ipv4")
+            })
             put("rules", JSONArray().apply {
                 // Sniffing is a route action in sing-box (the inbound "sniff" field is
                 // deprecated); it lets domain rules see real hostnames.
@@ -143,15 +149,18 @@ object SingBoxConfigGenerator {
         // config had; it does mean lookups leave outside the tunnel.)
         root.put("dns", JSONObject().apply {
             put("servers", JSONArray().apply {
+                // sing-box 1.12+ server format (the legacy "address" form is gone in 1.14).
+                // Servers dial directly by default, so no "detour": pointing one at the empty
+                // direct outbound is rejected.
                 put(JSONObject().apply {
+                    put("type", "udp")
                     put("tag", "bootstrap")
-                    put("address", "8.8.8.8")
-                    put("detour", "direct")
+                    put("server", "8.8.8.8")
                 })
                 put(JSONObject().apply {
+                    put("type", "udp")
                     put("tag", "fallback")
-                    put("address", "1.1.1.1")
-                    put("detour", "direct")
+                    put("server", "1.1.1.1")
                 })
             })
             put("strategy", "prefer_ipv4")

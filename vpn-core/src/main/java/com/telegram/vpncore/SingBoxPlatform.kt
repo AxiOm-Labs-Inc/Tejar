@@ -6,7 +6,12 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.util.Log
+import io.nekohasekai.libbox.BridgeOptions
+import io.nekohasekai.libbox.BridgeSession
 import io.nekohasekai.libbox.CommandServerHandler
+import io.nekohasekai.libbox.NeighborUpdateListener
+import io.nekohasekai.libbox.PlatformUser
+import io.nekohasekai.libbox.ShellSession
 import io.nekohasekai.libbox.InterfaceUpdateListener
 import io.nekohasekai.libbox.LocalDNSTransport
 import io.nekohasekai.libbox.NetworkInterface as LibboxNetworkInterface
@@ -40,8 +45,6 @@ internal class TejarPlatformInterface(private val context: Context) : PlatformIn
     override fun openTun(options: TunOptions): Int =
         throw UnsupportedOperationException("Tejar runs sing-box as a local SOCKS proxy, without TUN")
 
-    override fun useProcFS(): Boolean = false
-
     override fun findConnectionOwner(
         ipProtocol: Int, sourceAddress: String, sourcePort: Int,
         destinationAddress: String, destinationPort: Int
@@ -61,12 +64,41 @@ internal class TejarPlatformInterface(private val context: Context) : PlatformIn
 
     override fun clearDNSCache() = Unit
 
-    // No system trust store injection: the core ships its own roots.
-    override fun systemCertificates(): StringIterator = EmptyStringIterator
-
     override fun readWIFIState(): WIFIState? = null
 
     override fun sendNotification(notification: Notification) = Unit
+
+    override fun cancelNotification(identifier: String, typeID: Int) = Unit
+
+    // ── sing-box 1.14 additions: neighbor table, SSH shell, Tailscale, bridges ──
+    // None of these are used by a SOCKS-only config; same answers as libbox's own stub.
+    override fun startNeighborMonitor(listener: NeighborUpdateListener) =
+        throw UnsupportedOperationException("neighbor monitor is not used")
+
+    override fun closeNeighborMonitor(listener: NeighborUpdateListener) = Unit
+
+    override fun registerMyInterface(name: String) = Unit
+
+    override fun usePlatformShell(): Boolean = false
+
+    override fun checkPlatformShell() = throw UnsupportedOperationException("no platform shell")
+
+    override fun openShellSession(
+        user: PlatformUser, command: String, environ: StringIterator, term: String, rows: Int, cols: Int
+    ): ShellSession = throw UnsupportedOperationException("no platform shell")
+
+    override fun lookupUser(username: String): PlatformUser = throw UnsupportedOperationException("no platform users")
+
+    override fun lookupSFTPServer(): String = throw UnsupportedOperationException("no SFTP server")
+
+    override fun readSystemSSHHostKey(): String = throw UnsupportedOperationException("no SSH host key")
+
+    override fun tailscaleHostname(): String = ""
+
+    override fun usePlatformBridge(): Boolean = false
+
+    override fun createBridge(options: BridgeOptions): BridgeSession =
+        throw UnsupportedOperationException("no platform bridge")
 
     // ── Network interfaces ───────────────────────────────────────
 
@@ -178,6 +210,10 @@ internal class TejarCommandServerHandler(
     override fun writeDebugMessage(message: String) {
         Log.d("SingBox", message)
     }
+
+    override fun triggerNativeCrash() = Unit
+
+    override fun connectSSHAgent(): Int = throw UnsupportedOperationException("no SSH agent")
 }
 
 // ── Iterator adapters ────────────────────────────────────────────

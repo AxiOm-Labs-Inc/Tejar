@@ -47,17 +47,20 @@ class XrayTest {
     }
 
     @Test fun trojanKcp() {
-        val o = XrayOutbounds.fromLink("trojan://pw@k.example.com:4000?type=kcp&headerType=wechat-video&seed=abc&sni=k.example.com&allowInsecure=1&alpn=h2,http/1.1")
+        val o = XrayOutbounds.fromLink("trojan://pw@k.example.com:4000?type=kcp&headerType=wechat-video&seed=abc&sni=k.example.com&allowInsecure=1&pcs=ab:cd&alpn=h2,http/1.1")
         assertEquals("trojan", o.getString("protocol"))
         assertEquals("pw", o.getJSONObject("settings").getJSONArray("servers").getJSONObject(0).getString("password"))
         val s = stream(o)
         assertEquals("kcp", s.getString("network"))
-        // xray 26.x: header and seed are UDP finalmask layers, header next to the wire.
+        // xray 26.10+: header and seed are "mkcp-legacy" finalmask layers, header next to the wire.
         val masks = s.getJSONObject("finalmask").getJSONArray("udp")
-        assertEquals("header-wechat", masks.getJSONObject(0).getString("type"))
-        assertEquals("mkcp-aes128gcm", masks.getJSONObject(1).getString("type"))
-        assertEquals("abc", masks.getJSONObject(1).getJSONObject("settings").getString("password"))
-        assertTrue(s.getJSONObject("tlsSettings").getBoolean("allowInsecure"))
+        assertEquals("mkcp-legacy", masks.getJSONObject(0).getString("type"))
+        assertEquals("wechat", masks.getJSONObject(0).getJSONObject("settings").getString("header"))
+        assertEquals("mkcp-legacy", masks.getJSONObject(1).getString("type"))
+        assertEquals("abc", masks.getJSONObject(1).getJSONObject("settings").getString("value"))
+        // allowInsecure was removed from xray (it fails the whole config); pcs is passed on.
+        assertFalse(s.getJSONObject("tlsSettings").has("allowInsecure"))
+        assertEquals("ab:cd", s.getJSONObject("tlsSettings").getString("pinnedPeerCertSha256"))
         assertEquals(2, s.getJSONObject("tlsSettings").getJSONArray("alpn").length())
     }
 
@@ -65,11 +68,15 @@ class XrayTest {
         val plain = XrayOutbounds.fromLink("vless://$uuid@k.example.com:4000?type=kcp&mtu=1200&tti=20")
         val masks = stream(plain).getJSONObject("finalmask").getJSONArray("udp")
         assertEquals(1, masks.length())
-        assertEquals("mkcp-original", masks.getJSONObject(0).getString("type"))
+        assertEquals("mkcp-legacy", masks.getJSONObject(0).getString("type"))
+        assertEquals(0, masks.getJSONObject(0).getJSONObject("settings").length())
         assertEquals(1200, stream(plain).getJSONObject("kcpSettings").getInt("mtu"))
         val fm = java.net.URLEncoder.encode("""{"udp":[{"type":"header-dtls"}]}""", "UTF-8")
         val custom = XrayOutbounds.fromLink("vless://$uuid@k.example.com:4000?type=kcp&fm=$fm")
-        assertEquals("header-dtls", stream(custom).getJSONObject("finalmask").getJSONArray("udp").getJSONObject(0).getString("type"))
+        // Pre-26.10 mask ids are rewritten to mkcp-legacy.
+        val customMask = stream(custom).getJSONObject("finalmask").getJSONArray("udp").getJSONObject(0)
+        assertEquals("mkcp-legacy", customMask.getString("type"))
+        assertEquals("dtls", customMask.getJSONObject("settings").getString("header"))
     }
 
     @Test fun tcpHttpHeaderObfuscation() {
@@ -86,8 +93,8 @@ class XrayTest {
         val o = XrayOutbounds.fromLink(link)
         assertEquals("vmess", o.getString("protocol"))
         val masks = stream(o).getJSONObject("finalmask").getJSONArray("udp")
-        assertEquals("header-srtp", masks.getJSONObject(0).getString("type"))
-        assertEquals("seedx", masks.getJSONObject(1).getJSONObject("settings").getString("password"))
+        assertEquals("srtp", masks.getJSONObject(0).getJSONObject("settings").getString("header"))
+        assertEquals("seedx", masks.getJSONObject(1).getJSONObject("settings").getString("value"))
         assertEquals("V", XrayOutbounds.nameOfLink(link))
     }
 
@@ -125,6 +132,49 @@ class XrayTest {
         assertThrows(IllegalArgumentException::class.java) {
             XrayOutbounds.sanitize(JSONObject("""{"protocol":"vless","proxySettings":{"tag":"x"}}"""))
         }
+    }
+
+    @Test fun sanitizeMigratesRemovedXrayOptions() {
+        val ob = JSONObject("""{"protocol":"vless","settings":{"vnext":[{"address":"a.example.com","port":443,"users":[{"id":"u"}]}]},
+            "streamSettings":{"network":"kcp","security":"tls","tlsSettings":{"serverName":"a.example.com","allowInsecure":true},
+            "finalmask":{"udp":[{"type":"header-dns","settings":{"domain":"d.example.com"}},{"type":"mkcp-aes128gcm","settings":{"password":"s"}}]}}}""")
+        val st = XrayOutbounds.sanitize(ob).getJSONObject("streamSettings")
+        assertFalse(st.getJSONObject("tlsSettings").has("allowInsecure"))
+        val masks = st.getJSONObject("finalmask").getJSONArray("udp")
+        assertEquals("mkcp-legacy", masks.getJSONObject(0).getString("type"))
+        assertEquals("dns", masks.getJSONObject(0).getJSONObject("settings").getString("header"))
+        assertEquals("d.example.com", masks.getJSONObject(0).getJSONObject("settings").getString("value"))
+        assertEquals("mkcp-legacy", masks.getJSONObject(1).getString("type"))
+        assertEquals("s", masks.getJSONObject(1).getJSONObject("settings").getString("value"))
+    }
+
+    @Test fun plaintextVlessAndTrojanToPublicAddressesAreRefused() {
+        fun refused(link: String) = XrayOutbounds.refusesPlaintext(XrayOutbounds.fromLink(link))
+        assertTrue(refused("vless://$uuid@k.example.com:4000?type=kcp"))
+        assertTrue(refused("trojan://pw@8.8.8.8:4000?type=kcp&security=none"))
+        assertFalse(refused("vless://$uuid@k.example.com:4000?type=kcp&security=tls"))
+        assertFalse(refused("vless://$uuid@k.example.com:443?type=xhttp&security=reality&pbk=k"))
+        assertFalse(refused("vless://$uuid@k.example.com:4000?type=kcp&encryption=mlkem768x25519plus.native.0rtt.abc"))
+        assertFalse(refused("vless://$uuid@192.168.1.5:4000?type=kcp"))
+        assertFalse(refused("vless://$uuid@router.lan:4000?type=kcp"))
+        val vmess = """{"v":"2","add":"v.example.com","port":"4000","id":"$uuid","net":"kcp","tls":""}"""
+        assertFalse(refused("vmess://" + java.util.Base64.getEncoder().encodeToString(vmess.toByteArray())))
+    }
+
+    @Test fun privateAddressesFollowXray() {
+        listOf("10.0.0.1", "172.20.1.1", "192.168.0.1", "127.0.0.1", "fd00::1", "[::1]", "nas", "box.local", "a.home.arpa")
+            .forEach { assertTrue(it, XrayOutbounds.isPrivateAddress(it)) }
+        listOf("8.8.8.8", "172.32.0.1", "2001:4860::8888", "example.com", "a.lan.example.com")
+            .forEach { assertFalse(it, XrayOutbounds.isPrivateAddress(it)) }
+    }
+
+    @Test fun storedOutboundsAreMigratedWhenTheProcessConfigIsBuilt() {
+        val stored = JSONObject("""{"protocol":"vless","settings":{"vnext":[{"address":"a.example.com","port":443,"users":[{"id":"$uuid"}]}]},
+            "streamSettings":{"network":"kcp","security":"tls","tlsSettings":{"allowInsecure":true},"finalmask":{"udp":[{"type":"mkcp-original"}]}}}""")
+        val server = OutboundConfigs.xrayServer(stored, "old")
+        val ob = XrayConfigBuilder.outboundFor(server, "t")
+        assertFalse(ob.getJSONObject("streamSettings").getJSONObject("tlsSettings").has("allowInsecure"))
+        assertEquals("mkcp-legacy", ob.getJSONObject("streamSettings").getJSONObject("finalmask").getJSONArray("udp").getJSONObject(0).getString("type"))
     }
 
     // ───────────── process config ─────────────

@@ -13,11 +13,11 @@ import java.util.zip.ZipFile
 // an executable ends up in nativeLibraryDir). Downloaded at build time, never committed.
 // MPL-2.0, see TEJAR.md. To update: change the version and take the digests from the release's
 // *.zip.dgst files (SHA2-256).
-def xrayVersion = 'v26.3.27'
+def xrayVersion = 'v26.11.9'
 def xrayAssets = [
-        'arm64-v8a'  : [zip: 'Xray-android-arm64-v8a.zip', sha256: '57149ffd48b629c07bf76938e73ab2729fde5910091497eab3e93d1c190f4c1b'],
+        'arm64-v8a'  : [zip: 'Xray-android-arm64-v8a.zip', sha256: 'edcefc25b9b3195b11e18624c8269a969d6aabc39c6298a9a5ab29de15d46f3b'],
         // upstream has no android arm32 build; the static linux one runs fine on Android
-        'armeabi-v7a': [zip: 'Xray-linux-arm32-v7a.zip', sha256: 'c7265ae13c63ca0241a037df4ef960ad37938c8a67d984cc08834b2cfdf5654b'],
+        'armeabi-v7a': [zip: 'Xray-linux-arm32-v7a.zip', sha256: '19c51e08a6562705fb1cb032a84fd87df21d7e27b194f035be7e754dbe3a97b3'],
 ]
 def xrayCache = new File(gradle.gradleUserHomeDir, "tejar-xray/${xrayVersion}")
 def xrayJniDir = layout.buildDirectory.dir('xray-jniLibs').get().asFile

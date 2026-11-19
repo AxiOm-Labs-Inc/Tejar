@@ -7,6 +7,7 @@ import io.nekohasekai.libbox.CommandClientOptions
 import io.nekohasekai.libbox.ConnectionEvents
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.LogIterator
+import io.nekohasekai.libbox.OutboundGroupItemIterator
 import io.nekohasekai.libbox.OutboundGroupIterator
 import io.nekohasekai.libbox.StatusMessage
 import io.nekohasekai.libbox.StringIterator
@@ -144,5 +145,6 @@ internal class SingBoxCommandClient(
         override fun setDefaultLogLevel(level: Int) = Unit
         override fun initializeClashMode(modes: StringIterator?, current: String?) = Unit
         override fun updateClashMode(mode: String?) = Unit
+        override fun writeOutbounds(message: OutboundGroupItemIterator?) = Unit
     }
 }
